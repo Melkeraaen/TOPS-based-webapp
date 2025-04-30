@@ -416,6 +416,8 @@ def run_simulation_thread(sim_params):
                 't': float(sol.t),
                 'x': convert_to_serializable(sol.x.copy()),
                 'v': convert_to_serializable(sol.v.copy()),
+                'v_magnitude': convert_to_serializable(np.abs(sol.v)),
+                'v_angle': convert_to_serializable(np.angle(sol.v)),
                 'gen_speed': convert_to_serializable(ps.gen['GEN'].speed(sol.x, sol.v)),
                 'gen_I': convert_to_serializable(ps.gen['GEN'].I(sol.x, sol.v)),
                 'load_I': convert_to_serializable(ps.loads['DynamicLoad'].I(sol.x, sol.v)),
@@ -454,7 +456,6 @@ def run_simulation_thread(sim_params):
                     
                     # Store PLL data in step_data
                     step_data.update({
-                        'v_angle': convert_to_serializable(v_angle),
                         'pll1_angle': convert_to_serializable(pll1_output),
                         'pll2_angle': convert_to_serializable(pll2_output),
                         'pll1_freq': convert_to_serializable(pll1_freq),
@@ -465,7 +466,6 @@ def run_simulation_thread(sim_params):
                     print(f"Error getting PLL results: {str(e)}")
                     # Initialize with empty arrays if there's an error
                     step_data.update({
-                        'v_angle': [],
                         'pll1_angle': [],
                         'pll2_angle': [],
                         'pll1_freq': [],

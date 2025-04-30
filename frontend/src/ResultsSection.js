@@ -53,6 +53,89 @@ const getMagnitude = (value, isPhasor = false) => {
   return 0;
 };
 
+// Helper function to detect islands in the network
+const detectIslands = (networkData, lineOutage) => {
+  const busNodes = networkData.nodes.filter(node => node.id?.toString().startsWith('B'));
+  const visited = new Set();
+  const islands = [];
+
+  // DFS to find connected components
+  const dfs = (nodeId, currentIsland) => {
+    visited.add(nodeId);
+    currentIsland.add(nodeId);
+
+    // Find all connected nodes through non-cut lines and transformers
+    networkData.links.forEach(link => {
+      // Only consider lines and transformers
+      if (link.type !== 'line' && link.type !== 'transformer') return;
+      
+      // Skip if this line is cut
+      if (lineOutage?.lineId === link.id) return;
+
+      // Check if this link connects to our current node
+      const nextNode = link.source === nodeId ? link.target : 
+                      link.target === nodeId ? link.source : null;
+      
+      if (nextNode && !visited.has(nextNode)) {
+        dfs(nextNode, currentIsland);
+      }
+    });
+  };
+
+  // Start DFS from each unvisited bus
+  busNodes.forEach(node => {
+    if (!visited.has(node.id)) {
+      const currentIsland = new Set();
+      dfs(node.id, currentIsland);
+      if (currentIsland.size > 0) {
+        islands.push(currentIsland);
+      }
+    }
+  });
+
+  // If no islands were found, create one island with all buses
+  if (islands.length === 0 && busNodes.length > 0) {
+    islands.push(new Set(busNodes.map(node => node.id)));
+  }
+
+  return islands;
+};
+
+// Helper function to map generators to islands
+const mapGeneratorsToIslands = (islands, networkData) => {
+  const genMapping = {};
+  
+  networkData.links.forEach(link => {
+    if (link.type === 'generator_connection') {
+      const genId = link.source.replace('G', '');
+      const busId = link.target;
+      
+      islands.forEach((island, idx) => {
+        if (island.has(busId)) {
+          genMapping[parseInt(genId) - 1] = idx;
+        }
+      });
+    }
+  });
+  
+  return genMapping;
+};
+
+// Helper function to calculate island frequencies
+const calculateIslandFrequencies = (islands, genMapping, genSpeeds) => {
+  return islands.map(island => {
+    const islandGens = Object.entries(genMapping)
+      .filter(([_, islandId]) => islandId === islands.indexOf(island))
+      .map(([genId]) => parseInt(genId));
+    
+    const avgSpeed = islandGens.reduce((sum, genId) => {
+      return sum + genSpeeds[genId];
+    }, 0) / islandGens.length;
+    
+    return 50 * (1 + avgSpeed);
+  });
+};
+
 const ResultsSection = ({ 
   results, 
   parameters, 
@@ -60,6 +143,26 @@ const ResultsSection = ({
   busPower,
   getLineFlowDirectionSimple 
 }) => {
+  // Add logging effect at top level
+  React.useEffect(() => {
+    if (results?.gen_speed && results.gen_speed[0]) {
+      const latestSpeeds = results.gen_speed[results.gen_speed.length - 1];
+      const islands = detectIslands(initialNetworkData, parameters.lineOutage || []);
+      const genMapping = mapGeneratorsToIslands(islands, initialNetworkData);
+      const frequencies = calculateIslandFrequencies(islands, genMapping, latestSpeeds);
+
+      console.log('System state:', {
+        islands: islands.map((island, idx) => ({
+          buses: Array.from(island),
+          generators: Object.entries(genMapping)
+            .filter(([_, islandId]) => islandId === idx)
+            .map(([genId]) => `G${parseInt(genId) + 1}`),
+          frequency: frequencies[idx].toFixed(3)
+        }))
+      });
+    }
+  }, [results?.gen_speed, parameters?.lineOutage, initialNetworkData]);
+
   if (!results) return null;
 
   return (
@@ -101,6 +204,140 @@ const ResultsSection = ({
                 />
               ) : (
                 <div>No voltage data available</div>
+              )}
+            </div>
+          </Grid>
+
+          {/* Voltage Angle Time Plot */}
+          <Grid item xs={12} md={6}>
+            <div className="plot-for-export" data-title="Bus Voltage Angles" style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+              {results?.v_angle && Array.isArray(results.v_angle) && results.v_angle.length > 0 && Array.isArray(results.v_angle[0]) ? (
+                <Plot
+                  data={results.v_angle[0].map((_, busIdx) => ({
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: `Bus ${busIdx + 1}`,
+                    x: results.t,
+                    y: results.v_angle.map(angles => angles[busIdx]),
+                    line: { 
+                      color: [
+                        '#e41a1c',  // red
+                        '#377eb8',  // blue
+                        '#4daf4a',  // green
+                        '#984ea3',  // purple
+                        '#ff7f00',  // orange
+                        '#a65628',  // brown
+                        '#f781bf',  // pink
+                        '#999999'   // grey
+                      ][busIdx % 8],
+                      width: 2
+                    }
+                  }))}
+                  layout={{
+                    ...defaultPlotLayout,
+                    title: {
+                      text: 'Bus Voltage Angles',
+                      font: { size: 24 },
+                      y: 0.95
+                    },
+                    xaxis: { title: 'Time [s]' },
+                    yaxis: { title: 'Angle [degrees]' },
+                    showlegend: true,
+                    legend: {
+                      x: 1.1,
+                      y: 1
+                    },
+                    margin: { t: 50, r: 100, b: 50, l: 50 }
+                  }}
+                  config={{
+                    responsive: true,
+                    displayModeBar: false
+                  }}
+                  style={{ width: '100%', height: '400px' }}
+                />
+              ) : (
+                <div>No voltage angle data available</div>
+              )}
+            </div>
+          </Grid>
+
+          {/* Voltage Phasor Plot */}
+          <Grid item xs={12} md={6}>
+            <div className="plot-for-export" data-title="Bus Voltage Phasors" style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+              {results?.v && results.v[0] ? (
+                <Plot
+                  data={results.v[0].map((_, busIdx) => {
+                    const lastIdx = results.v.length - 1;
+                    const magnitude = getMagnitude(results.v[lastIdx][busIdx], true);
+                    const angle = Math.atan2(
+                      results.v[lastIdx][busIdx].imag,
+                      results.v[lastIdx][busIdx].real
+                    );  // Keep in radians like TOPS
+                    return {
+                      type: 'scatterpolar',
+                      mode: 'lines+markers',
+                      name: `Bus ${busIdx + 1}`,
+                      r: [0, magnitude],
+                      theta: [0, angle * 180 / Math.PI],  // Convert to degrees for plotly
+                      marker: { size: 8 },
+                      line: { 
+                        color: [
+                          '#e41a1c',  // red
+                          '#377eb8',  // blue
+                          '#4daf4a',  // green
+                          '#984ea3',  // purple
+                          '#ff7f00',  // orange
+                          '#a65628',  // brown
+                          '#f781bf',  // pink
+                          '#999999'   // grey
+                        ][busIdx % 8],
+                        width: 2
+                      }
+                    };
+                  })}
+                  layout={{
+                    ...defaultPlotLayout,
+                    title: {
+                      text: 'Bus Voltage Phasors',
+                      font: { size: 24 },
+                      y: 0.95
+                    },
+                    showlegend: true,
+                    legend: {
+                      x: 1.1,
+                      y: 1
+                    },
+                    polar: {
+                      radialaxis: {
+                        showticklabels: true,
+                        ticks: '',
+                        range: [0, Math.max(...results.v.map(v => Math.max(...v.map(val => getMagnitude(val, true))))) * 1.1],
+                        title: 'Voltage [p.u.]',
+                        gridcolor: '#e0e0e0'
+                      },
+                      angularaxis: {
+                        tickmode: 'array',
+                        tickvals: [-180, -90, 0, 90, 180],
+                        ticktext: ['180°', '270°', '0°', '90°', '180°'],
+                        direction: 'clockwise',
+                        period: 360,
+                        gridcolor: '#e0e0e0'
+                      },
+                      bgcolor: '#ffffff'
+                    },
+                    width: 500,
+                    height: 500,
+                    margin: { t: 50, r: 100, b: 50, l: 50 }
+                  }}
+                  config={{
+                    responsive: true,
+                    displayModeBar: false
+                  }}
+                  useResizeHandler={true}
+                  style={{ width: '100%', height: '400px' }}
+                />
+              ) : (
+                <div>No voltage phasor data available</div>
               )}
             </div>
           </Grid>
@@ -244,26 +481,28 @@ const ResultsSection = ({
 
           {/* Generator Speed Plot */}
           <Grid item xs={12} md={6}>
-            <div className="plot-for-export" data-title="Generator Speed" style={{ backgroundColor: '#ffffff', padding: '10px' }}>
-              {results && results.gen_speed && results.gen_speed[0] ? (
+            <div className="plot-for-export" data-title="Generator Speeds" style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+              {results?.gen_speed && results.gen_speed[0] ? (
                 <Plot
-                  data={results.gen_speed[0].map((_, idx) => ({
-                    x: results.t,
-                    y: results.gen_speed.map(speed => getMagnitude(speed[idx], false)),
-                    type: 'scatter',
-                    mode: 'lines',
-                    name: `Generator ${idx + 1}`,
-                    line: { simplify: true }
-                  }))}
+                  data={[
+                    ...results.gen_speed[0].map((_, idx) => ({
+                      x: results.t,
+                      y: results.gen_speed.map(speeds => speeds[idx]),
+                      type: 'scatter',
+                      mode: 'lines',
+                      name: `Generator ${idx + 1}`,
+                      line: { simplify: true }
+                    }))
+                  ]}
                   layout={{
                     ...defaultPlotLayout,
                     title: {
-                      text: 'Generator Speed',
+                      text: 'Generator Speeds',
                       font: { size: 24 },
                       y: 0.95
                     },
                     xaxis: { title: 'Time [s]' },
-                    yaxis: { title: 'Speed [pu]' },
+                    yaxis: { title: 'Speed [pu]' }
                   }}
                   config={{
                     responsive: true,
@@ -273,6 +512,139 @@ const ResultsSection = ({
                 />
               ) : (
                 <div>No generator speed data available</div>
+              )}
+            </div>
+          </Grid>
+
+          {/* Frequency Gauge Plot */}
+          <Grid item xs={12} md={6}>
+            <div className="plot-for-export" data-title="System Frequency" style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+              {results?.gen_speed && results.gen_speed[0] ? (() => {
+                // Get latest generator speeds
+                const latestSpeeds = results.gen_speed[results.gen_speed.length - 1];
+                
+                // Detect islands
+                const islands = detectIslands(initialNetworkData, parameters.lineOutage || []);
+                const genMapping = mapGeneratorsToIslands(islands, initialNetworkData);
+
+                // Calculate current frequencies for each island
+                const frequencies = calculateIslandFrequencies(islands, genMapping, latestSpeeds);
+
+                // Define colors for gauge zones
+                const colors = {
+                  normal: 'rgb(46, 213, 115)',     // Green
+                  warning: 'rgb(255, 165, 2)',     // Orange
+                  danger: 'rgb(235, 77, 75)',      // Red
+                  background: '#f5f6fa',           // Light gray
+                  text: '#2f3640'                  // Dark gray
+                };
+
+                // Calculate layout dimensions based on number of islands
+                const numIslands = frequencies.length;
+                const isHorizontal = numIslands <= 3; // Stack horizontally if 3 or fewer islands
+                
+                // Calculate domains for each gauge
+                const domains = frequencies.map((_, idx) => {
+                  if (isHorizontal) {
+                    // Arrange horizontally
+                    const width = 1 / numIslands;
+                    return {
+                      x: [idx * width, (idx + 1) * width - 0.05], // Leave small gap between gauges
+                      y: [0, 0.85] // Leave room for title at top
+                    };
+                  } else {
+                    // Arrange vertically
+                    const height = 1 / numIslands;
+                    return {
+                      x: [0, 1],
+                      y: [idx * height, (idx + 1) * height - 0.05] // Leave small gap between gauges
+                    };
+                  }
+                });
+
+                // Create gauge traces
+                const gaugeTraces = frequencies.map((freq, idx) => {
+                  // Get list of generators for this island
+                  const islandGens = Object.entries(genMapping)
+                    .filter(([_, id]) => id === idx)
+                    .map(([genId]) => parseInt(genId) + 1)
+                    .join(', ');
+
+                  return {
+                    type: 'indicator',
+                    mode: 'gauge+number',
+                    value: freq,
+                    title: {
+                      text: `Island ${idx + 1}<br>Generators: ${islandGens}`,
+                      font: { size: 16, color: colors.text }
+                    },
+                    gauge: {
+                      axis: {
+                        range: [49, 51],
+                        tickwidth: 2,
+                        tickcolor: colors.text,
+                        tickmode: 'linear',
+                        dtick: 0.2,
+                        tickfont: { size: 12 }
+                      },
+                      bar: { color: colors.text },
+                      bgcolor: colors.background,
+                      borderwidth: 2,
+                      bordercolor: colors.text,
+                      steps: [
+                        // Red zones
+                        { range: [49, 49.8], color: colors.danger },
+                        { range: [50.2, 51], color: colors.danger },
+                        // Orange zones
+                        { range: [49.8, 49.9], color: colors.warning },
+                        { range: [50.1, 50.2], color: colors.warning },
+                        // Green zone
+                        { range: [49.9, 50.1], color: colors.normal }
+                      ],
+                      threshold: {
+                        line: { color: colors.text, width: 4 },
+                        thickness: 0.75,
+                        value: freq
+                      }
+                    },
+                    domain: domains[idx]
+                  };
+                });
+
+                // Layout configuration
+                const layout = {
+                  title: {
+                    text: 'System Frequencies',
+                    font: { size: 24, color: colors.text },
+                    y: 0.95,
+                    yanchor: 'top'
+                  },
+                  height: isHorizontal ? 400 : Math.max(300, numIslands * 250),
+                  margin: { t: 60, r: 25, l: 25, b: 25 },
+                  paper_bgcolor: '#ffffff',
+                  font: { family: 'Arial, sans-serif' },
+                  showlegend: false
+                };
+
+                // Render the gauges
+                return (
+                  <Plot
+                    data={gaugeTraces}
+                    layout={layout}
+                    config={{
+                      responsive: true,
+                      displayModeBar: false
+                    }}
+                    style={{ 
+                      width: '100%',
+                      minWidth: '400px',
+                      maxWidth: isHorizontal ? '1200px' : '600px'
+                    }}
+                    useResizeHandler={true}
+                  />
+                );
+              })() : (
+                <div>No frequency data available</div>
               )}
             </div>
           </Grid>
