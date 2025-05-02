@@ -8,9 +8,14 @@ import {
   TableCell,
   TableContainer,
   TableHead,
-  TableRow
+  TableRow,
+  Box,
+  Select,
+  MenuItem
 } from '@mui/material';
 import Plot from 'react-plotly.js';
+import FocusedComponentPlots from './FocusedComponentPlots';
+
 
 // Default plot layout configuration
 const defaultPlotLayout = {
@@ -69,12 +74,20 @@ const detectIslands = (networkData, lineOutage) => {
       // Only consider lines and transformers
       if (link.type !== 'line' && link.type !== 'transformer') return;
       
-      // Skip if this line is cut
-      if (lineOutage?.lineId === link.id) return;
+      // Skip if this line is in the outage list
+      let isOutaged = false;
+      if (lineOutage?.enabled && lineOutage?.outages) {
+        isOutaged = lineOutage.outages.some(outage => outage.lineId === link.id);
+      }
+      if (isOutaged) return;
+
+      // Get source and target IDs, handling both object and string formats
+      const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+      const targetId = typeof link.target === 'object' ? link.target.id : link.target;
 
       // Check if this link connects to our current node
-      const nextNode = link.source === nodeId ? link.target : 
-                      link.target === nodeId ? link.source : null;
+      const nextNode = sourceId === nodeId ? targetId : 
+                      targetId === nodeId ? sourceId : null;
       
       if (nextNode && !visited.has(nextNode)) {
         dfs(nextNode, currentIsland);
@@ -107,11 +120,15 @@ const mapGeneratorsToIslands = (islands, networkData) => {
   
   networkData.links.forEach(link => {
     if (link.type === 'generator_connection') {
-      const genId = link.source.replace('G', '');
-      const busId = link.target;
+      // Handle link.source being either an object or a string
+      const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+      const genId = sourceId.replace('G', '');
+      
+      // Handle link.target being either an object or a string
+      const targetId = typeof link.target === 'object' ? link.target.id : link.target;
       
       islands.forEach((island, idx) => {
-        if (island.has(busId)) {
+        if (island.has(targetId)) {
           genMapping[parseInt(genId) - 1] = idx;
         }
       });
@@ -136,12 +153,306 @@ const calculateIslandFrequencies = (islands, genMapping, genSpeeds) => {
   });
 };
 
+// Power Injections Plot Component
+const PowerInjectionsPlot = ({ 
+  results,
+  busPower,
+  initialNetworkData,
+  defaultPlotLayout
+}) => {
+  const [selectedBus, setSelectedBus] = React.useState('all');
+  const [plotKey, setPlotKey] = React.useState(0); // Key for forcing re-render with transitions
+  
+  // Handle bus selection change
+  const handleBusChange = (event) => {
+    setSelectedBus(event.target.value);
+    setPlotKey(prevKey => prevKey + 1); // Change key to force re-render with animation
+  };
+  
+  // Parse raw power injections strings into complex numbers
+  const rawInjections = results.bus_power_raw.map(val => {
+    const match = val.match(/\(([-+]?\d+\.?\d*)([-+]\d+\.?\d*)j\)/);
+    if (match) {
+      return {
+        real: parseFloat(match[1]),
+        imag: parseFloat(match[2])
+      };
+    }
+    return { real: 0, imag: 0 };
+  });
+
+  // Define a color palette for the 11 buses
+  const busColors = [
+    '#e41a1c', // red
+    '#377eb8', // blue
+    '#4daf4a', // green
+    '#984ea3', // purple
+    '#ff7f00', // orange
+    '#a65628', // brown
+    '#f781bf', // pink
+    '#ffff33', // yellow
+    '#999999', // grey
+    '#a6cee3', // light blue
+    '#fb9a99'  // light red
+  ];
+
+  // Create filtered list of bus nodes (B1-B11)
+  const busNodes = initialNetworkData.nodes.filter(node => 
+    node.id && node.id.startsWith('B')
+  ).slice(0, 11);
+  
+  // Filter bus nodes based on selection
+  const filteredBusNodes = selectedBus === 'all' 
+    ? busNodes 
+    : busNodes.filter(node => node.id === selectedBus);
+    
+  // Create arrows connecting initial to final positions
+  const arrowData = filteredBusNodes.map((node) => {
+    const idx = initialNetworkData.nodes.findIndex(n => n.id === node.id);
+    const originalIndex = busNodes.findIndex(n => n.id === node.id);
+    if (idx === -1 || !rawInjections[idx] || !busPower[idx]) return null;
+    
+    const initial = rawInjections[idx];
+    const final = busPower[idx];
+    
+    return {
+      x: [initial.real, final.p],
+      y: [initial.imag, final.q],
+      mode: 'lines',
+      line: {
+        color: 'rgba(0, 0, 0, 0.3)',
+        width: 1,
+        dash: 'dot'
+      },
+      showlegend: false,
+      hoverinfo: 'none'
+    };
+  }).filter(Boolean);
+
+  // Create data for initial power injections (hollow circles)
+  const initialData = filteredBusNodes.map((node) => {
+    const idx = initialNetworkData.nodes.findIndex(n => n.id === node.id);
+    const originalIndex = busNodes.findIndex(n => n.id === node.id);
+    if (idx === -1 || !rawInjections[idx]) return null;
+    
+    const val = rawInjections[idx];
+    return {
+      x: [val.real],
+      y: [val.imag],
+      name: `${node.id} (Initial)`,
+      type: 'scatter',
+      mode: 'markers',
+      marker: {
+        size: 12,
+        symbol: 'circle-open',
+        color: busColors[originalIndex % busColors.length],
+        line: {
+          width: 2,
+          color: busColors[originalIndex % busColors.length]
+        }
+      },
+      text: node.id,
+      hovertemplate: '%{text} (Initial): %{x:.3f} + %{y:.3f}j<extra></extra>'
+    };
+  }).filter(Boolean);
+
+  // Create data for final power injections (filled circles)
+  const finalData = filteredBusNodes.map((node) => {
+    const idx = initialNetworkData.nodes.findIndex(n => n.id === node.id);
+    const originalIndex = busNodes.findIndex(n => n.id === node.id);
+    if (idx === -1 || !busPower[idx]) return null;
+    
+    const val = busPower[idx];
+    return {
+      x: [val.p],
+      y: [val.q],
+      name: `${node.id} (Final)`,
+      type: 'scatter',
+      mode: 'markers',
+      marker: {
+        size: 12,
+        symbol: 'circle',
+        color: busColors[originalIndex % busColors.length]
+      },
+      text: node.id,
+      hovertemplate: '%{text} (Final): %{x:.3f} + %{y:.3f}j<extra></extra>'
+    };
+  }).filter(Boolean);
+
+  // Create legend-only entries for explaining markers
+  const legendData = [
+    {
+      x: [null],
+      y: [null],
+      mode: 'markers',
+      marker: { 
+        size: 12, 
+        symbol: 'circle-open',
+        line: { width: 2, color: 'black' }
+      },
+      name: 'Initial State (t=0)',
+      showlegend: true
+    },
+    {
+      x: [null],
+      y: [null],
+      mode: 'markers',
+      marker: { 
+        size: 12, 
+        symbol: 'circle',
+        color: 'black'
+      },
+      name: 'Final State',
+      showlegend: true
+    }
+  ];
+
+  // Configure axis ranges
+  let axisConfig = {};
+  
+  if (selectedBus === 'all') {
+    // Calculate symmetric axes for all buses view
+    const allX = [
+      ...initialData.map(d => d.x[0] || 0),
+      ...finalData.map(d => d.x[0] || 0)
+    ];
+    const allY = [
+      ...initialData.map(d => d.y[0] || 0),
+      ...finalData.map(d => d.y[0] || 0)
+    ];
+    
+    const xMin = Math.min(...allX);
+    const xMax = Math.max(...allX);
+    const yMin = Math.min(...allY);
+    const yMax = Math.max(...allY);
+    
+    // Create symmetrical axes for all buses view
+    const axisMax = Math.max(Math.abs(xMin), Math.abs(xMax), Math.abs(yMin), Math.abs(yMax)) * 1.1;
+    
+    axisConfig = {
+      xaxis: { 
+        autorange: false,
+        range: [-axisMax, axisMax]
+      },
+      yaxis: { 
+        autorange: false,
+        range: [-axisMax, axisMax],
+        scaleanchor: 'x',
+        scaleratio: 1
+      }
+    };
+  } else {
+    // For single bus view, use autorange with padding
+    axisConfig = {
+      xaxis: { 
+        autorange: true
+      },
+      yaxis: { 
+        autorange: true
+      }
+    };
+  }
+
+  return (
+    <>
+      <Box sx={{ mb: 2, display: 'flex', alignItems: 'center' }}>
+        <Typography variant="body1" sx={{ mr: 2 }}>
+          Select Bus:
+        </Typography>
+        <Select
+          value={selectedBus}
+          onChange={handleBusChange}
+          size="small"
+          sx={{ minWidth: 120 }}
+        >
+          <MenuItem value="all">All Buses</MenuItem>
+          {busNodes.map(node => (
+            <MenuItem key={node.id} value={node.id}>
+              <Box sx={{ 
+                display: 'flex', 
+                alignItems: 'center',
+                gap: 1
+              }}>
+                <Box sx={{ 
+                  width: 12, 
+                  height: 12, 
+                  borderRadius: '50%', 
+                  bgcolor: busColors[busNodes.findIndex(n => n.id === node.id)] 
+                }}/>
+                {node.id}
+              </Box>
+            </MenuItem>
+          ))}
+        </Select>
+      </Box>
+    
+      <div className="plot-for-export" data-title="Power Injections Comparison" style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+        <Plot
+          key={plotKey}
+          data={[
+            ...arrowData,
+            ...initialData,
+            ...finalData,
+            ...legendData
+          ]}
+          layout={{
+            ...defaultPlotLayout,
+            title: {
+              text: selectedBus === 'all' 
+                ? 'Power Injections in Complex Plane' 
+                : `Power Injection for ${selectedBus}`,
+              font: { size: 24 },
+              y: 0.95
+            },
+            xaxis: { 
+              title: 'Real Power (MW)',
+              zeroline: true,
+              zerolinecolor: '#000000',
+              zerolinewidth: 1,
+              gridcolor: '#e0e0e0',
+              ...axisConfig.xaxis
+            },
+            yaxis: { 
+              title: 'Reactive Power (MVAr)',
+              zeroline: true,
+              zerolinecolor: '#000000',
+              zerolinewidth: 1,
+              gridcolor: '#e0e0e0',
+              ...axisConfig.yaxis
+            },
+            height: 600,
+            showlegend: true,
+            legend: {
+              orientation: 'h',
+              y: -0.15
+            },
+            hovermode: 'closest',
+            // Add transition for smoother changes
+            transition: {
+              duration: 400,
+              easing: 'cubic-in-out'
+            }
+          }}
+          config={{
+            responsive: true,
+            displayModeBar: true,
+            displaylogo: false
+          }}
+          style={{ width: '100%', height: '600px' }}
+        />
+      </div>
+    </>
+  );
+};
+
 const ResultsSection = ({ 
   results, 
   parameters, 
   initialNetworkData, 
   busPower,
-  getLineFlowDirectionSimple 
+  getImprovedLineFlowDirection,
+  monitoredComponents,
+  onRemoveComponent
 }) => {
   // Add logging effect at top level
   React.useEffect(() => {
@@ -163,12 +474,50 @@ const ResultsSection = ({
     }
   }, [results?.gen_speed, parameters?.lineOutage, initialNetworkData]);
 
+  // Merge links and transformers into a single array (do not mutate props)
+  const mergedLinks = React.useMemo(() => {
+    const links = initialNetworkData.links ? [...initialNetworkData.links] : [];
+    if (initialNetworkData.transformers) {
+      initialNetworkData.transformers.slice(1).forEach(row => {
+        links.push({
+          id: row[0],
+          type: 'transformer',
+          source: row[1],
+          target: row[2],
+          S_n: row[3],
+          V_n_from: row[4],
+          V_n_to: row[5],
+          R: row[6],
+          X: row[7]
+        });
+      });
+    }
+    return links;
+  }, [initialNetworkData]);
+
   if (!results) return null;
 
   return (
     <>
+      {/* Add the FocusedComponentPlots at the top if there are monitored components */}
+      {monitoredComponents && monitoredComponents.length > 0 && (
+        <FocusedComponentPlots 
+          results={results} 
+          monitoredComponents={monitoredComponents} 
+          initialNetworkData={initialNetworkData}
+          onRemoveComponent={onRemoveComponent}
+        />
+      )}
+
       <Paper sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" gutterBottom>Simulation Plots</Typography>
+        <Typography variant="h5" gutterBottom sx={{ 
+          borderBottom: '2px solid #e0e0e0', 
+          pb: 1, 
+          color: '#3f51b5',
+          fontWeight: 'bold'
+        }}>
+          Real-Time Simulation Results
+        </Typography>
         <Grid container spacing={3}>
           {/* Bus Voltage Plot */}
           <Grid item xs={12} md={6}>
@@ -247,7 +596,7 @@ const ResultsSection = ({
                       x: 1.1,
                       y: 1
                     },
-                    margin: { t: 50, r: 100, b: 50, l: 50 }
+                    margin: { t: 50, r: 100, b: 50 }
                   }}
                   config={{
                     responsive: true,
@@ -807,7 +1156,21 @@ const ResultsSection = ({
               )}
             </div>
           </Grid>
+        </Grid>
+      </Paper>
 
+      {/* Post-Simulation Analysis Section */}
+      <Paper sx={{ p: 3, mb: 3, mt: 5, borderTop: '4px solid #3f51b5' }}>
+        <Typography variant="h5" gutterBottom sx={{ 
+          borderBottom: '2px solid #e0e0e0', 
+          pb: 1, 
+          color: '#3f51b5',
+          fontWeight: 'bold'
+        }}>
+          Post-Simulation Analysis
+        </Typography>
+        
+        <Grid container spacing={3}>
           {/* Eigenvalue Plot */}
           <Grid item xs={12} md={6}>
             <div className="plot-for-export" data-title="System Eigenvalues" style={{ backgroundColor: '#ffffff', padding: '10px' }}>
@@ -956,14 +1319,27 @@ const ResultsSection = ({
         </Grid>
       </Paper>
 
+      {/* Power Injections Comparison Plot */}
+      {results && results.bus_power_raw && busPower && busPower.length > 0 && (
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Typography variant="h6" gutterBottom>Power Injections Comparison (Initial vs Final)</Typography>
+            <PowerInjectionsPlot 
+              results={results}
+              busPower={busPower}
+              initialNetworkData={initialNetworkData}
+              defaultPlotLayout={defaultPlotLayout}
+            />
+          </Paper>
+        )}
+
       {/* Bus Power Injection Table */}
       {busPower && busPower.length > 0 && (
-        <Paper sx={{ p: 2, mb: 3 }}>
-          <Typography variant="h6" gutterBottom>Bus Power Injections (Final)</Typography>
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Typography variant="h6" gutterBottom sx={{ color: 'secondary.main' }}>Power Injections</Typography>
           <TableContainer>
             <Table size="small">
               <TableHead>
-                <TableRow>
+                <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
                   <TableCell>Bus</TableCell>
                   <TableCell align="right">P (MW)</TableCell>
                   <TableCell align="right">Q (MVAr)</TableCell>
@@ -971,7 +1347,7 @@ const ResultsSection = ({
               </TableHead>
               <TableBody>
                 {busPower.map((bp, idx) => (
-                  <TableRow key={idx}>
+                  <TableRow key={idx} sx={{ '&:nth-of-type(odd)': { backgroundColor: '#fafafa' } }}>
                     <TableCell>{initialNetworkData.nodes[idx]?.id || idx + 1}</TableCell>
                     <TableCell align="right">{bp.p.toFixed(3)}</TableCell>
                     <TableCell align="right">{bp.q.toFixed(3)}</TableCell>
@@ -983,45 +1359,180 @@ const ResultsSection = ({
         </Paper>
       )}
 
-      {/* Line Power Flow Checklist Table */}
+      {/* Line Power Flow Table */}
       {busPower && busPower.length > 0 && (
-        <Paper sx={{ p: 2, mb: 3 }}>
-          <Typography variant="h6" gutterBottom>Line Power Flow Checklist</Typography>
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Typography variant="h6" gutterBottom sx={{ color: 'secondary.main' }}>Power Flow Directions</Typography>
           <TableContainer>
             <Table size="small">
               <TableHead>
-                <TableRow>
+                <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
                   <TableCell>Line</TableCell>
                   <TableCell>From Bus</TableCell>
                   <TableCell>To Bus</TableCell>
                   <TableCell align="right">From Bus P (MW)</TableCell>
                   <TableCell align="right">To Bus P (MW)</TableCell>
-                  <TableCell align="center">Direction</TableCell>
+                  <TableCell align="center">Flow Direction</TableCell>
+                  <TableCell align="center">Strongest Influences</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {initialNetworkData.links.filter(l => l.type === 'line' || l.type === 'transformer').map((link, idx) => {
-                  const fromId = typeof link.source === 'object' ? link.source.id : link.source;
-                  const toId = typeof link.target === 'object' ? link.target.id : link.target;
-                  const fromIdx = initialNetworkData.nodes.findIndex(n => n.id === fromId);
-                  const toIdx = initialNetworkData.nodes.findIndex(n => n.id === toId);
-                  const fromP = busPower[fromIdx]?.p ?? 0;
-                  const toP = busPower[toIdx]?.p ?? 0;
-                  const dir = getLineFlowDirectionSimple(fromIdx, toIdx);
-                  let dirText = '-';
-                  if (dir > 0) dirText = `towards bus ${toId}`;
-                  else if (dir < 0) dirText = `towards bus ${fromId}`;
-                  return (
-                    <TableRow key={link.id || idx}>
-                      <TableCell>{link.id || `${fromId}-${toId}`}</TableCell>
-                      <TableCell>{fromId}</TableCell>
-                      <TableCell>{toId}</TableCell>
-                      <TableCell align="right">{fromP.toFixed(3)}</TableCell>
-                      <TableCell align="right">{toP.toFixed(3)}</TableCell>
-                      <TableCell align="center">{dirText}</TableCell>
-                    </TableRow>
-                  );
-                })}
+                {/* Collect unique transformer connections */}
+                {(() => {
+                  const transformerRows = [];
+                  // Manually define transformer connections
+                  const transformerDefs = [
+                    { label: 'T1-5', busA: 'B1', busB: 'B5' },
+                    { label: 'T2-6', busA: 'B2', busB: 'B6' },
+                    { label: 'T3-11', busA: 'B3', busB: 'B11' },
+                    { label: 'T4-10', busA: 'B4', busB: 'B10' },
+                  ];
+                  transformerDefs.forEach(({ label, busA, busB }) => {
+                    const idxA = initialNetworkData.nodes.findIndex(n => n.id === busA);
+                    const idxB = initialNetworkData.nodes.findIndex(n => n.id === busB);
+                    if (idxA === -1 || idxB === -1) return;
+                    const fromP = busPower[idxA]?.p ?? 0;
+                    const toP = busPower[idxB]?.p ?? 0;
+                    // Use simulation-based (particle) flow direction logic
+                    const dir = getImprovedLineFlowDirection(idxA, idxB);
+                    let dirText = '-';
+                    let dirArrow = '⇌';
+                    if (dir > 0) {
+                      dirText = `${busA.replace('B','')} → ${busB.replace('B','')}`;
+                      dirArrow = '→';
+                    } else if (dir < 0) {
+                      dirText = `${busB.replace('B','')} → ${busA.replace('B','')}`;
+                      dirArrow = '←';
+                    }
+                    // Find significant injections
+                    const sourcesAndSinks = [];
+                    busPower.forEach((power, bIdx) => {
+                      if (power && Math.abs(power.p) > 0.1) {
+                        const busId = initialNetworkData.nodes[bIdx]?.id;
+                        if (busId && busId.startsWith('B')) {
+                          const type = power.p > 0 ? 'Source' : 'Sink';
+                          sourcesAndSinks.push({
+                            id: busId.replace('B',''),
+                            value: power.p.toFixed(1),
+                            type
+                          });
+                        }
+                      }
+                    });
+                    sourcesAndSinks.sort((a, b) => Math.abs(parseFloat(b.value)) - Math.abs(parseFloat(a.value)));
+                    const topInfluencers = sourcesAndSinks.slice(0, 3);
+                    transformerRows.push(
+                      <TableRow key={label} sx={{ '&:nth-of-type(odd)': { backgroundColor: '#fafafa' }, '&:hover': { backgroundColor: '#f0f0f0' } }}>
+                        <TableCell>{label}</TableCell>
+                        <TableCell>{busA.replace('B','')}</TableCell>
+                        <TableCell>{busB.replace('B','')}</TableCell>
+                        <TableCell align="right">{fromP.toFixed(3)}</TableCell>
+                        <TableCell align="right">{toP.toFixed(3)}</TableCell>
+                        <TableCell align="center">
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Typography fontSize="1.2rem" fontWeight="bold" color="primary">
+                              {dirArrow}
+                            </Typography>
+                            <Typography variant="body2" sx={{ ml: 1 }}>
+                              {dirText}
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                        <TableCell align="center">
+                          <Box>
+                            {topInfluencers.map((inf, i) => (
+                              <Typography 
+                                key={i} 
+                                variant="body2" 
+                                color={inf.type === 'Source' ? 'success.main' : 'error.main'}
+                                sx={{ fontSize: '0.8rem' }}
+                              >
+                                {inf.id}: {inf.value} MW ({inf.type})
+                              </Typography>
+                            ))}
+                          </Box>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  });
+                  // Existing line logic
+                  const lineRows = [];
+                  mergedLinks.forEach((link, idx) => {
+                    if (link.type === 'line') {
+                      const fromId = typeof link.source === 'object' ? link.source.id : link.source;
+                      const toId = typeof link.target === 'object' ? link.target.id : link.target;
+                      if (fromId.startsWith('B') && toId.startsWith('B')) {
+                        const sorted = [fromId.replace('B',''), toId.replace('B','')].sort((a,b)=>a-b);
+                        const label = `L${sorted[0]}-${sorted[1]}`;
+                        const fromIdx = initialNetworkData.nodes.findIndex(n => n.id === fromId);
+                        const toIdx = initialNetworkData.nodes.findIndex(n => n.id === toId);
+                        const dir = getImprovedLineFlowDirection(fromIdx, toIdx);
+                        let dirText = '-';
+                        let dirArrow = '⇌';
+                        if (dir > 0) {
+                          dirText = `${sorted[0]} → ${sorted[1]}`;
+                          dirArrow = '→';
+                        } else if (dir < 0) {
+                          dirText = `${sorted[1]} → ${sorted[0]}`;
+                          dirArrow = '←';
+                        }
+                        const fromP = busPower[fromIdx]?.p ?? 0;
+                        const toP = busPower[toIdx]?.p ?? 0;
+                        // Find significant injections
+                        const sourcesAndSinks = [];
+                        busPower.forEach((power, bIdx) => {
+                          if (power && Math.abs(power.p) > 0.1) {
+                            const busId = initialNetworkData.nodes[bIdx]?.id;
+                            if (busId && busId.startsWith('B')) {
+                              const type = power.p > 0 ? 'Source' : 'Sink';
+                              sourcesAndSinks.push({
+                                id: busId.replace('B',''),
+                                value: power.p.toFixed(1),
+                                type
+                              });
+                            }
+                          }
+                        });
+                        sourcesAndSinks.sort((a, b) => Math.abs(parseFloat(b.value)) - Math.abs(parseFloat(a.value)));
+                        const topInfluencers = sourcesAndSinks.slice(0, 3);
+                        lineRows.push(
+                          <TableRow key={label} sx={{ '&:nth-of-type(odd)': { backgroundColor: '#fafafa' }, '&:hover': { backgroundColor: '#f0f0f0' } }}>
+                            <TableCell>{label}</TableCell>
+                            <TableCell>{sorted[0]}</TableCell>
+                            <TableCell>{sorted[1]}</TableCell>
+                            <TableCell align="right">{fromP.toFixed(3)}</TableCell>
+                            <TableCell align="right">{toP.toFixed(3)}</TableCell>
+                            <TableCell align="center">
+                              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <Typography fontSize="1.2rem" fontWeight="bold" color="primary">
+                                  {dirArrow}
+                                </Typography>
+                                <Typography variant="body2" sx={{ ml: 1 }}>
+                                  {dirText}
+                                </Typography>
+                              </Box>
+                            </TableCell>
+                            <TableCell align="center">
+                              <Box>
+                                {topInfluencers.map((inf, i) => (
+                                  <Typography 
+                                    key={i} 
+                                    variant="body2" 
+                                    color={inf.type === 'Source' ? 'success.main' : 'error.main'}
+                                    sx={{ fontSize: '0.8rem' }}
+                                  >
+                                    {inf.id}: {inf.value} MW ({inf.type})
+                                  </Typography>
+                                ))}
+                              </Box>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      }
+                    }
+                  });
+                  return [...transformerRows, ...lineRows];
+                })()}
               </TableBody>
             </Table>
           </TableContainer>
@@ -1030,19 +1541,19 @@ const ResultsSection = ({
 
       {/* Raw Bus Power Data */}
       {results && results.bus_power_raw && (
-        <Paper sx={{ p: 2, mb: 3 }}>
-          <Typography variant="h6" gutterBottom>Bus Power Injections (Raw)</Typography>
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Typography variant="h6" gutterBottom sx={{ color: 'secondary.main' }}>Bus Power Injections (Raw)</Typography>
           <TableContainer>
             <Table size="small">
               <TableHead>
-                <TableRow>
+                <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
                   <TableCell>Bus</TableCell>
                   <TableCell>Injection (complex)</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {results.bus_power_raw.map((val, idx) => (
-                  <TableRow key={idx}>
+                  <TableRow key={idx} sx={{ '&:nth-of-type(odd)': { backgroundColor: '#fafafa' } }}>
                     <TableCell>{initialNetworkData.nodes[idx]?.id || idx + 1}</TableCell>
                     <TableCell>{val}</TableCell>
                   </TableRow>
@@ -1052,59 +1563,6 @@ const ResultsSection = ({
           </TableContainer>
         </Paper>
       )}
-
-      {/* Detailed Results Table */}
-      <Paper sx={{ p: 3 }}>
-        <Typography variant="h6" gutterBottom>Detailed Results</Typography>
-        <TableContainer>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Time [s]</TableCell>
-                <TableCell>Generator Speed [pu]</TableCell>
-                <TableCell>Bus Voltage [pu]</TableCell>
-                <TableCell>Generator Current [A]</TableCell>
-                <TableCell>Load Current [A]</TableCell>
-                <TableCell>Load Active Power [MW]</TableCell>
-                <TableCell>Load Reactive Power [MVAr]</TableCell>
-                <TableCell>Transformer Current From [A]</TableCell>
-                <TableCell>Transformer Current To [A]</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {results.t.map((time, index) => (
-                <TableRow key={index}>
-                  <TableCell>{time.toFixed(3)}</TableCell>
-                  <TableCell>
-                    {results.gen_speed[index].map(val => getMagnitude(val, false).toFixed(3)).join(', ')}
-                  </TableCell>
-                  <TableCell>
-                    {results.v[index].map(val => getMagnitude(val, true).toFixed(3)).join(', ')}
-                  </TableCell>
-                  <TableCell>
-                    {results.gen_I[index].map(val => getMagnitude(val, true).toFixed(3)).join(', ')}
-                  </TableCell>
-                  <TableCell>
-                    {results.load_I[index].map(val => getMagnitude(val, true).toFixed(3)).join(', ')}
-                  </TableCell>
-                  <TableCell>
-                    {results.load_P[index].map(val => getMagnitude(val, false).toFixed(3)).join(', ')}
-                  </TableCell>
-                  <TableCell>
-                    {results.load_Q[index].map(val => getMagnitude(val, false).toFixed(3)).join(', ')}
-                  </TableCell>
-                  <TableCell>
-                    {results.trafo_current_from[index].map(val => getMagnitude(val, true).toFixed(3)).join(', ')}
-                  </TableCell>
-                  <TableCell>
-                    {results.trafo_current_to[index].map(val => getMagnitude(val, true).toFixed(3)).join(', ')}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </Paper>
     </>
   );
 };

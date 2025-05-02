@@ -167,67 +167,6 @@ def run_simulation_thread(sim_params):
             traceback.print_exc()
             raise
         
-        # === Generator Control Configuration ===
-        gen_control = sim_params.get('generatorControl', {})
-        governor_params = gen_control.get('governor', {})
-        avr_params = gen_control.get('avr', {})
-        
-        print("\nGenerator control parameters:", {
-            'governor': governor_params,
-            'avr': avr_params
-        })
-        
-        # Configure governor if enabled
-        if governor_params.get('enabled', False):
-            try:
-                print("\nSetting governor parameters...")
-                # Configure TGOV1 (Thermal Governor) parameters
-                ps.gov['TGOV1'].par['R'][:] = governor_params.get('R', 0.05)  # Speed droop
-                ps.gov['TGOV1'].par['D_t'][:] = governor_params.get('D_t', 0.02)  # Turbine damping
-                ps.gov['TGOV1'].par['V_min'][:] = governor_params.get('V_min', 0)  # Min valve position
-                ps.gov['TGOV1'].par['V_max'][:] = governor_params.get('V_max', 1)  # Max valve position
-                ps.gov['TGOV1'].par['T_1'][:] = governor_params.get('T_1', 0.1)  # Governor time constant
-                ps.gov['TGOV1'].par['T_2'][:] = governor_params.get('T_2', 0.09)  # Lead time constant
-                ps.gov['TGOV1'].par['T_3'][:] = governor_params.get('T_3', 0.2)  # Lag time constant
-                
-                print("Governor parameters set")
-                
-                # Reinitialize model with new governor parameters
-                print("Re-initializing model after governor parameter update...")
-                ps.init_dyn_sim()
-                print("Model re-initialized successfully")
-                
-            except Exception as e:
-                print("Error setting governor parameters:")
-                import traceback
-                traceback.print_exc()
-                raise
-        
-        # Configure AVR if enabled
-        if avr_params.get('enabled', False):
-            try:
-                print("\nSetting AVR parameters...")
-                # Configure SEXS (Simplified Excitation System) parameters
-                ps.avr['SEXS'].par['K'][:] = avr_params.get('K', 100)  # AVR gain
-                ps.avr['SEXS'].par['T_a'][:] = avr_params.get('T_a', 2.0)  # Time constant Ta
-                ps.avr['SEXS'].par['T_b'][:] = avr_params.get('T_b', 10.0)  # Time constant Tb
-                ps.avr['SEXS'].par['T_e'][:] = avr_params.get('T_e', 0.5)  # Exciter time constant
-                ps.avr['SEXS'].par['E_min'][:] = avr_params.get('E_min', -3)  # Min field voltage
-                ps.avr['SEXS'].par['E_max'][:] = avr_params.get('E_max', 3)  # Max field voltage
-                
-                print("AVR parameters set")
-                
-                # Reinitialize model with new AVR parameters
-                print("Re-initializing model after AVR parameter update...")
-                ps.init_dyn_sim()
-                print("Model re-initialized successfully")
-                
-            except Exception as e:
-                print("Error setting AVR parameters:")
-                import traceback
-                traceback.print_exc()
-                raise
-        
         # === Model State Verification ===
         print("\nVerifying model state...")
         try:
@@ -249,102 +188,44 @@ def run_simulation_thread(sim_params):
         load_noise = noise_params.get('loads', {})
         gen_noise = noise_params.get('generators', {})
         
-        if load_noise.get('enabled', False) or gen_noise.get('enabled', False):
-            try:
-                def noisy_state_derivatives(t, x, v):
-                    """
-                    Wrapper function that adds noise to the system state derivatives.
-                    
-                    Args:
-                        t: Current simulation time
-                        x: State vector
-                        v: Input vector
-                    
-                    Returns:
-                        Modified state derivatives with added noise
-                    """
-                    # Get base state derivatives
-                    dx = ps.state_derivatives(t, x, v)
-                    
-                    # Add noise to loads if enabled
-                    if load_noise.get('enabled', False):
-                        try:
-                            # Get current setpoints
-                            g_setp = ps.loads['DynamicLoad']._input_values['g_setp'].copy()
-                            b_setp = ps.loads['DynamicLoad']._input_values['b_setp'].copy()
-                            
-                            # Generate and apply noise
-                            magnitude = load_noise.get('magnitude', 0.1)
-                            g_noise = magnitude * np.random.randn(len(g_setp))
-                            b_noise = magnitude * np.random.randn(len(b_setp))
-
-                            # Apply filtered noise to setpoints
-                            filter_time = load_noise.get('filter_time', 0.1)
-                            if hasattr(ps.loads['DynamicLoad'], '_noise_states'):
-                                ps.loads['DynamicLoad']._noise_states = np.exp(-t/filter_time) * ps.loads['DynamicLoad']._noise_states + np.sqrt(2*t/filter_time) * np.random.randn(len(g_setp))
-                            else:
-                                ps.loads['DynamicLoad']._noise_states = np.zeros(len(g_setp))
-                            
-                            filtered_noise = ps.loads['DynamicLoad']._noise_states
-                            ps.loads['DynamicLoad']._input_values['g_setp'] = g_setp + magnitude * filtered_noise
-                            ps.loads['DynamicLoad']._input_values['b_setp'] = b_setp + magnitude * filtered_noise
-                        except Exception as e:
-                            print('Error applying load noise:', e)
-                    
-                    # Add noise to generators if enabled
-                    if gen_noise.get('enabled', False):
-                        try:
-                            # Get current generator mechanical power
-                            p_mech = ps.generators['GEN']._input_values['p_mech'].copy()
-                            
-                            # Generate and apply filtered noise
-                            magnitude = gen_noise.get('magnitude', 0.1)
-                            filter_time = gen_noise.get('filter_time', 0.1)
-                            
-                            if hasattr(ps.generators['GEN'], '_noise_states'):
-                                ps.generators['GEN']._noise_states = np.exp(-t/filter_time) * ps.generators['GEN']._noise_states + np.sqrt(2*t/filter_time) * np.random.randn(len(p_mech))
-                            else:
-                                ps.generators['GEN']._noise_states = np.zeros(len(p_mech))
-                            
-                            filtered_noise = ps.generators['GEN']._noise_states
-                            ps.generators['GEN']._input_values['p_mech'] = p_mech + magnitude * filtered_noise
-                        except Exception as e:
-                            print('Error applying generator noise:', e)
-                    
-                    return dx
+        # Create a wrapper for state derivatives that handles short circuit
+        def state_derivatives_with_sc(t, x, v):
+            # Apply short circuit if configured
+            if sim_parameters['shortCircuit']['busId'] is not None and sim_parameters['shortCircuit']['busId'] != '':
+                sc_time = sim_parameters['shortCircuit']['startTime']
+                sc_duration = sim_parameters['shortCircuit']['duration']
+                sc_bus_id = sim_parameters['shortCircuit']['busId']
+                # Convert busId from string to integer if it's a string and not empty
+                sc_bus_idx = int(sc_bus_id) if isinstance(sc_bus_id, str) and sc_bus_id != '' else sc_bus_id
+                sc_admittance = sim_parameters['shortCircuit']['admittance']
                 
-                print("Creating solver with noise parameters:", {
-                    'load_noise': load_noise,
-                    'gen_noise': gen_noise
-                })
-                
-                # Use ModifiedEulerDAE solver with noisy state derivatives
-                sol = dps_sol.ModifiedEulerDAE(
-                    noisy_state_derivatives, 
-                    ps.solve_algebraic, 
-                    0, 
-                    ps.x_0.copy(), 
-                    t_end=20, 
-                    max_step=5e-3
-                )
-            except Exception as e:
-                print("Error in noise setup:", str(e))
-                import traceback
-                traceback.print_exc()
-                raise
-        else:
-            # Use regular solver without noise
-            sol = dps_sol.ModifiedEulerDAE(
-                ps.state_derivatives, 
-                ps.solve_algebraic, 
-                0, 
-                ps.x_0.copy(), 
-                t_end=20, 
-                max_step=5e-3
-            )
+                # Apply fault during the specified time window
+                if sc_time <= t <= (sc_time + sc_duration):
+                    ps.y_bus_red_mod[(sc_bus_idx,) * 2] = sc_admittance
+                else:
+                    ps.y_bus_red_mod[(sc_bus_idx,) * 2] = 0
+            
+            # Get the state derivatives from the power system model
+            return ps.state_derivatives(t, x, v)
+        
+        # Use regular solver (noise functionality disabled)
+        sol = dps_sol.ModifiedEulerDAE(
+            state_derivatives_with_sc, 
+            ps.solve_algebraic, 
+            0, 
+            ps.x_0.copy(), 
+            t_end=20, 
+            max_step=5e-3
+        )
 
         # Initialize results storage
         results = defaultdict(list)
+        
+        # Initialize set to track disconnected lines
+        disconnected_lines = set()
+        
+        # Initialize set to track reconnected lines
+        reconnected_lines = set()
         
         # Initialize PLL-specific results if enabled
         if pll_params.get('enabled', False):
@@ -367,18 +248,6 @@ def run_simulation_thread(sim_params):
 
         # Run complete simulation
         while sol.t < sol.t_end:
-            # Apply short circuit if configured
-            if sim_parameters['shortCircuit']['busId']:
-                sc_time = sim_parameters['shortCircuit']['startTime']
-                sc_duration = sim_parameters['shortCircuit']['duration']
-                sc_bus_idx = int(sim_parameters['shortCircuit']['busId'])
-                sc_admittance = sim_parameters['shortCircuit']['admittance']
-                
-                if sc_time <= sol.t <= (sc_time + sc_duration):
-                    ps.y_bus_red_mod[(sc_bus_idx,) * 2] = sc_admittance
-                else:
-                    ps.y_bus_red_mod[(sc_bus_idx,) * 2] = 0
-
             # Only apply load changes if they are non-zero, otherwise keep initial values
             if sim_parameters['step1']['time'] <= sol.t:
                 g_setp = sim_parameters['step1']['g_setp']
@@ -400,9 +269,37 @@ def run_simulation_thread(sim_params):
                     b_setp if b_setp != 0 else ps.loads['DynamicLoad']._input_values['b_setp'][sim_parameters['step2']['load_index']], 
                     sim_parameters['step2']['load_index'])
 
-            if sim_parameters['lineOutage']['lineId'] and sol.t >= sim_parameters['lineOutage']['time']:
-                ps.lines['Line'].event(ps, sim_parameters['lineOutage']['lineId'], 'disconnect')
-                sim_parameters['lineOutage']['lineId'] = ''  # Reset to prevent multiple disconnections
+            # Handle line outages if enabled
+            if sim_parameters['lineOutage'].get('enabled', True):
+                for outage in sim_parameters['lineOutage']['outages']:
+                    lineId = outage.get('lineId')
+                    outageTime = outage.get('time')
+                    reconnect = outage.get('reconnect', {})
+                    reconnectEnabled = reconnect.get('enabled', False)
+                    reconnectTime = reconnect.get('time', 0)
+                    
+                    # Check if this line needs to be disconnected
+                    if (lineId and lineId != '' and 
+                        lineId not in disconnected_lines and 
+                        sol.t >= outageTime):
+                        try:
+                            ps.lines['Line'].event(ps, lineId, 'disconnect')
+                            disconnected_lines.add(lineId)  # Mark as disconnected to prevent repeat operations
+                            print(f"Line {lineId} disconnected at t={sol.t}")
+                        except Exception as e:
+                            print(f"Error disconnecting line {lineId}: {e}")
+                    
+                    # Check if this line needs to be reconnected
+                    if (reconnectEnabled and lineId and lineId != '' and 
+                        lineId in disconnected_lines and 
+                        lineId not in reconnected_lines and 
+                        sol.t >= reconnectTime):
+                        try:
+                            ps.lines['Line'].event(ps, lineId, 'reconnect')
+                            reconnected_lines.add(lineId)  # Mark as reconnected to prevent repeat operations
+                            print(f"Line {lineId} reconnected at t={sol.t}")
+                        except Exception as e:
+                            print(f"Error reconnecting line {lineId}: {e}")
 
             # Apply tap changes if enabled
             if sim_parameters['tapChanger']['enabled']:
@@ -706,8 +603,63 @@ def start_simulation():
         # Clear previous results
         simulation_state['results'].clear()
         
+        # Get the request data
+        data = request.json
+        
+        # Basic validation of parameters
+        if not data:
+            return jsonify({'status': 'error', 'message': 'No parameters provided. Please set parameters before running the simulation.'}), 400
+        
+        # Validate shortCircuit parameters
+        if 'shortCircuit' in data:
+            if 'busId' in data['shortCircuit']:
+                # If busId is empty but simulation is attempted, provide a clear error
+                if data['shortCircuit']['busId'] == '':
+                    # This is a valid case - just no short circuit
+                    # Explicitly set it to None/empty to avoid conversion issues later
+                    data['shortCircuit']['busId'] = None
+                elif isinstance(data['shortCircuit']['busId'], str):
+                    try:
+                        # Try to convert to integer
+                        data['shortCircuit']['busId'] = int(data['shortCircuit']['busId'])
+                    except ValueError:
+                        return jsonify({
+                            'status': 'error', 
+                            'message': 'Invalid short circuit bus ID. Please select a valid bus or leave empty for no short circuit.'
+                        }), 400
+            
+            # Check if required short circuit parameters are present when busId is set
+            if data['shortCircuit']['busId'] and (
+                'startTime' not in data['shortCircuit'] or 
+                'duration' not in data['shortCircuit'] or
+                'admittance' not in data['shortCircuit']
+            ):
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Short circuit is configured but missing required parameters (startTime, duration, or admittance).'
+                }), 400
+        
+        # Validate line outage parameters
+        if 'lineOutage' in data:
+            if data['lineOutage'].get('enabled', False) and 'outages' in data['lineOutage']:
+                for i, outage in enumerate(data['lineOutage']['outages']):
+                    if 'lineId' in outage and outage['lineId'] and 'time' not in outage:
+                        return jsonify({
+                            'status': 'error',
+                            'message': f'Line outage #{i+1} is configured but missing required time parameter.'
+                        }), 400
+        
+        # Validate transformer tap changer parameters
+        if 'tapChanger' in data and data['tapChanger'].get('enabled') and 'changes' in data['tapChanger']:
+            for i, change in enumerate(data['tapChanger']['changes']):
+                if 'transformerId' not in change or change['transformerId'] == '':
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'Please select a transformer for tap change #{i+1} or disable tap changer functionality.'
+                    }), 400
+        
         # Start simulation in a separate thread
-        sim_thread = threading.Thread(target=run_simulation_thread, args=(request.json,))
+        sim_thread = threading.Thread(target=run_simulation_thread, args=(data,))
         sim_thread.daemon = True
         sim_thread.start()
         

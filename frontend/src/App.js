@@ -4,6 +4,9 @@ import {
   Paper, 
   Typography,
   CircularProgress,
+  Button,
+  Box,
+  Grid,
 } from '@mui/material';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -11,6 +14,90 @@ import html2canvas from 'html2canvas';
 import PS_graph from './PS_graph';
 import ResultsSection from './ResultsSection';
 import ParameterControls from './ParameterControls';
+import ComponentViewer from './ComponentViewer';
+
+// Add a new ButtonPanel component right after PS_graph import
+const ButtonPanel = ({ 
+  saveParameters,
+  handleStartSimulation,
+  downloadExcel,
+  exportPlotsToPDF,
+  loading,
+  exportingPdf,
+  results,
+  error,
+  selectionMode,
+  setSelectionMode,
+  selectedComponent,
+  monitoredComponents
+}) => (
+  <Box sx={{ display: 'flex', gap: 2, mb: 4, flexWrap: 'wrap', justifyContent: 'center' }}>
+    <Button
+      variant="contained"
+      color="secondary"
+      onClick={saveParameters}
+      size="large"
+    >
+      Save Parameters
+    </Button>
+    <Button
+      variant="contained"
+      color="primary"
+      onClick={handleStartSimulation}
+      disabled={loading}
+      size="large"
+    >
+      {loading ? <CircularProgress size={24} /> : 'Run Simulation'}
+    </Button>
+    {!loading && (
+      <>
+        <Button
+          variant="outlined"
+          color="primary"
+          onClick={downloadExcel}
+          disabled={!results}
+          size="large"
+        >
+          Download Excel
+        </Button>
+        <Button
+          variant="outlined"
+          color="secondary"
+          onClick={exportPlotsToPDF}
+          disabled={exportingPdf || !results}
+          size="large"
+        >
+          {exportingPdf ? (
+            <>
+              <CircularProgress size={24} sx={{ mr: 1 }} />
+              Generating PDF...
+            </>
+          ) : (
+            'Export Plots to PDF'
+          )}
+        </Button>
+        <Button
+          variant={selectionMode ? "contained" : "outlined"}
+          color={selectionMode ? "success" : "primary"}
+          onClick={() => setSelectionMode(!selectionMode)}
+          size="large"
+        >
+          {selectionMode ? "Exit Selection Mode" : "Component Selection"}
+        </Button>
+        {monitoredComponents.length > 0 && (
+          <Typography variant="body2" color="text.secondary" sx={{ alignSelf: 'center' }}>
+            Monitoring: {monitoredComponents.length} component{monitoredComponents.length !== 1 ? 's' : ''}
+          </Typography>
+        )}
+        {error && (
+          <Typography color="error">
+            {error}
+          </Typography>
+        )}
+      </>
+    )}
+  </Box>
+);
 
 const API_BASE_URL = 'http://127.0.0.1:8000/api';
 
@@ -177,8 +264,20 @@ function App() {
   const [parameters, setParameters] = useState({
     step1: { time: 1.0, load_index: 0, g_setp: 0, b_setp: 0 },
     step2: { time: 2.0, load_index: 0, g_setp: 0, b_setp: 0 },
-    lineOutage: { lineId: '', time: 1.0 },
-    shortCircuit: { busId: '', startTime: 0, duration: 0, admittance: 0 },
+    lineOutage: { 
+      enabled: true,
+      outages: [
+        { 
+          lineId: '', 
+          time: 1.0,
+          reconnect: {
+            enabled: false,
+            time: 5.0
+          }
+        }
+      ]
+    },
+    shortCircuit: { busId: '', startTime: 1.0, duration: 0.1, admittance: 1000000 },
     tapChanger: { 
       enabled: true,
       changes: [
@@ -188,32 +287,13 @@ function App() {
     noiseParams: {
       loads: {
         enabled: false,
-        magnitude: 0.1
+        magnitude: 0.1,
+        filter_time: 0.1
       },
       generators: {
         enabled: false,
-        magnitude: 0.1
-      }
-    },
-    generatorControl: {
-      governor: {
-        enabled: false,
-        R: 0.05,
-        D_t: 0.02,
-        V_min: 0,
-        V_max: 1,
-        T_1: 0.1,
-        T_2: 0.09,
-        T_3: 0.2
-      },
-      avr: {
-        enabled: false,
-        K: 100,
-        T_a: 2.0,
-        T_b: 10.0,
-        T_e: 0.5,
-        E_min: -3,
-        E_max: 3
+        magnitude: 0.1,
+        filter_time: 0.1
       }
     },
     pllParams: {
@@ -228,12 +308,6 @@ function App() {
     }
   });
   const [loadChanges, setLoadChanges] = useState([]);
-  const [noiseEnabled, setNoiseEnabled] = useState(false);
-  const [noiseParams, setNoiseParams] = useState({
-    magnitude: 0.1,
-    target: 'loads', // 'loads' or 'generators'
-    filterTime: 0.1
-  });
   const [simulationParams, setSimulationParams] = useState({
     t_end: 20,
     dt: 5e-3,
@@ -241,7 +315,6 @@ function App() {
     tap_changes: parameters.tapChanger.changes,
     load_changes: [parameters.step1, parameters.step2],
     noiseParams: parameters.noiseParams,
-    generatorControl: parameters.generatorControl,
     pllParams: parameters.pllParams
   });
   const [exportingPdf, setExportingPdf] = useState(false);
@@ -249,30 +322,35 @@ function App() {
   const [powerFlows, setPowerFlows] = useState({});
   // Add a new state for busPower
   const [busPower, setBusPower] = useState(null);
+  const [componentViewerOpen, setComponentViewerOpen] = useState(false);
+  // Add states for component selection
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedComponent, setSelectedComponent] = useState(null);
+  const [monitoredComponents, setMonitoredComponents] = useState([]);
 
   // Update network data when line outage parameters change
   useEffect(() => {
-    console.log('Line selected:', parameters.lineOutage.lineId); // Debug log
+    console.log('Line outages:', parameters.lineOutage.outages); // Debug log
     
     // Create new links array with fresh objects to avoid reference issues
     const currentLinks = initialNetworkData.links.map(link => ({ ...link }));
 
-    // If a line is selected, update its appearance
-    if (parameters.lineOutage.lineId && parameters.lineOutage.lineId !== '') {
-      currentLinks.forEach(link => {
-        if (link.id === parameters.lineOutage.lineId) {
-          link.dashed = true;  // Mark the line as dashed
-          link.selected = true;  // Mark the line as selected
-        } else {
-          link.dashed = false;
-          link.selected = false;
+    // Reset all lines initially
+    currentLinks.forEach(link => {
+      link.dashed = false;
+      link.selected = false;
+    });
+
+    // Mark outaged lines
+    if (parameters.lineOutage.enabled && parameters.lineOutage.outages.length > 0) {
+      parameters.lineOutage.outages.forEach(outage => {
+        if (outage.lineId && outage.lineId !== '') {
+          const lineLink = currentLinks.find(link => link.id === outage.lineId);
+          if (lineLink) {
+            lineLink.dashed = true;  // Mark the line as dashed
+            lineLink.selected = true;  // Mark the line as selected
+          }
         }
-      });
-    } else {
-      // Reset all lines if no line is selected
-      currentLinks.forEach(link => {
-        link.dashed = false;
-        link.selected = false;
       });
     }
 
@@ -280,7 +358,7 @@ function App() {
       nodes: initialNetworkData.nodes,
       links: currentLinks
     });
-  }, [parameters.lineOutage.lineId]);
+  }, [parameters.lineOutage]);
 
   // Add useEffect to update graph width based on container size
   useEffect(() => {
@@ -335,24 +413,42 @@ function App() {
     const data = results.t.map((time, index) => {
       const baseData = {
         'Time [s]': time.toFixed(3),
-        'Generator Speed [pu]': formatComplex(results.gen_speed[index][0]),
-        'Bus Voltage [pu]': formatComplex(results.v[index][0]),
-        'Generator Current [A]': formatComplex(results.gen_I[index][0]),
-        'Load Current [A]': formatComplex(results.load_I[index][0]),
-        'Load Active Power [MW]': formatComplex(results.load_P[index][0]),
-        'Load Reactive Power [MVAr]': formatComplex(results.load_Q[index][0])
       };
+
+      // Add individual bus voltage measurements
+      results.v[index].forEach((v, busIdx) => {
+        baseData[`Bus ${busIdx + 1} Voltage [pu]`] = formatComplex(v);
+        baseData[`Bus ${busIdx + 1} Voltage Magnitude [pu]`] = results.v_magnitude[index][busIdx].toFixed(3);
+        baseData[`Bus ${busIdx + 1} Voltage Angle [deg]`] = (results.v_angle[index][busIdx] * 180/Math.PI).toFixed(3);
+      });
+
+      // Add individual generator measurements
+      results.gen_speed[index].forEach((speed, genIdx) => {
+        baseData[`Generator ${genIdx + 1} Speed [pu]`] = speed.toFixed(3);
+        baseData[`Generator ${genIdx + 1} Current [A]`] = formatComplex(results.gen_I[index][genIdx]);
+      });
+
+      // Add individual load measurements
+      results.load_I[index].forEach((current, loadIdx) => {
+        baseData[`Load ${loadIdx + 1} Current [A]`] = formatComplex(current);
+        baseData[`Load ${loadIdx + 1} Active Power [MW]`] = formatComplex(results.load_P[index][loadIdx]);
+        baseData[`Load ${loadIdx + 1} Reactive Power [MVAr]`] = formatComplex(results.load_Q[index][loadIdx]);
+      });
+
+      // Add individual transformer measurements
+      results.trafo_current_from[index].forEach((current, trafoIdx) => {
+        baseData[`Transformer ${trafoIdx + 1} Current From [A]`] = formatComplex(current);
+        baseData[`Transformer ${trafoIdx + 1} Current To [A]`] = formatComplex(results.trafo_current_to[index][trafoIdx]);
+      });
 
       // Add PLL data if available
       if (parameters.pllParams.enabled && results.pll1_angle && results.pll2_angle) {
-        return {
-          ...baseData,
-          'Voltage Angle [deg]': (results.v_angle[index] * 180/Math.PI).toFixed(3),
-          'PLL1 Angle [deg]': (results.pll1_angle[index] * 180/Math.PI).toFixed(3),
-          'PLL2 Angle [deg]': (results.pll2_angle[index] * 180/Math.PI).toFixed(3),
-          'PLL1 Frequency [Hz]': results.pll1_freq[index].toFixed(3),
-          'PLL2 Frequency [Hz]': results.pll2_freq[index].toFixed(3)
-        };
+        results.pll1_angle[index].forEach((angle, pllIdx) => {
+          baseData[`PLL1 Bus ${pllIdx + 1} Angle [deg]`] = (angle * 180/Math.PI).toFixed(3);
+          baseData[`PLL2 Bus ${pllIdx + 1} Angle [deg]`] = (results.pll2_angle[index][pllIdx] * 180/Math.PI).toFixed(3);
+          baseData[`PLL1 Bus ${pllIdx + 1} Frequency [Hz]`] = results.pll1_freq[index][pllIdx].toFixed(3);
+          baseData[`PLL2 Bus ${pllIdx + 1} Frequency [Hz]`] = results.pll2_freq[index][pllIdx].toFixed(3);
+        });
       }
 
       return baseData;
@@ -362,6 +458,31 @@ function App() {
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Simulation Results');
+
+    // Auto-adjust column widths
+    const max_width = 100; // Maximum column width in characters
+    const min_width = 10;  // Minimum column width in characters
+    const colWidths = {};
+    
+    // Calculate maximum width for each column
+    Object.keys(data[0]).forEach((key, index) => {
+      // Get the column letter (A, B, C, etc.)
+      const colLetter = XLSX.utils.encode_col(index);
+      
+      // Calculate width based on header and data
+      const headerWidth = key.length;
+      const dataWidth = Math.max(...data.map(row => {
+        const value = row[key];
+        return value ? value.toString().length : 0;
+      }));
+      
+      // Set column width (add some padding)
+      const width = Math.min(Math.max(headerWidth, dataWidth) + 2, max_width);
+      colWidths[colLetter] = { wch: Math.max(width, min_width) };
+    });
+
+    // Apply column widths
+    ws['!cols'] = Object.values(colWidths);
 
     // Save file
     XLSX.writeFile(wb, 'simulation_results.xlsx');
@@ -390,11 +511,13 @@ function App() {
         body: JSON.stringify(simulationParamsToSend),
       });
 
+      const data = await response.json();
+      
       if (!response.ok) {
-        throw new Error('Failed to start simulation');
+        // Handle validation errors from the backend with specific messages
+        throw new Error(data.message || 'Failed to start simulation. Please check your parameters.');
       }
 
-      const data = await response.json();
       console.log('Simulation started with ID:', data.simulation_id);
       setSimulationId(data.simulation_id);
 
@@ -522,10 +645,10 @@ function App() {
           setLoading(false);
           setResults(data.data); // <-- Add this line to update results immediately
           // Remove the outaged line after simulation completes
-          if (parameters.lineOutage.lineId && parameters.lineOutage.lineId !== '') {
+          if (parameters.lineOutage.outages.length > 0) {
             setNetworkData(prev => ({
               ...prev,
-              links: prev.links.filter(link => link.id !== parameters.lineOutage.lineId)
+              links: prev.links.filter(link => !parameters.lineOutage.outages.some(outage => link.id === outage.lineId))
             }));
           }
           // Trigger a final fetch of results
@@ -545,7 +668,7 @@ function App() {
       
     } catch (err) {
       console.error('Simulation error:', err);
-      setError('Failed to run simulation: ' + err.message);
+      setError(err.message || 'Failed to run simulation. Please check your parameters.');
       setLoading(false);
     }
   };
@@ -558,6 +681,57 @@ function App() {
         changes: prev.tapChanger.changes.map((change, i) =>
           i === index ? { ...change, [field]: value } : change
         )
+      }
+    }));
+  };
+
+  const handleLineOutageChange = (index, field, value) => {
+    setParameters(prev => ({
+      ...prev,
+      lineOutage: {
+        ...prev.lineOutage,
+        outages: prev.lineOutage.outages.map((outage, i) =>
+          i === index ? { ...outage, [field]: value } : outage
+        )
+      }
+    }));
+  };
+
+  // Add new handler for reconnection settings
+  const handleReconnectChange = (index, field, value) => {
+    setParameters(prev => ({
+      ...prev,
+      lineOutage: {
+        ...prev.lineOutage,
+        outages: prev.lineOutage.outages.map((outage, i) =>
+          i === index ? { 
+            ...outage, 
+            reconnect: { 
+              ...outage.reconnect, 
+              [field]: value 
+            } 
+          } : outage
+        )
+      }
+    }));
+  };
+
+  const handleRemoveLineOutage = (index) => {
+    setParameters(prev => ({
+      ...prev,
+      lineOutage: {
+        ...prev.lineOutage,
+        outages: prev.lineOutage.outages.filter((_, i) => i !== index)
+      }
+    }));
+  };
+
+  const handleAddLineOutage = () => {
+    setParameters(prev => ({
+      ...prev,
+      lineOutage: {
+        ...prev.lineOutage,
+        outages: [...prev.lineOutage.outages, { lineId: '', time: 1.0, reconnect: { enabled: false, time: 5.0 } }]
       }
     }));
   };
@@ -577,15 +751,8 @@ function App() {
       ...prev,
       tapChanger: {
         ...prev.tapChanger,
-        changes: [...prev.tapChanger.changes, { transformerId: '', time: 0, ratioChange: 0 }]
+        changes: [...prev.tapChanger.changes, { transformerId: '0', time: 0, ratioChange: 1.0 }]
       }
-    }));
-  };
-
-  const handleNoiseParamChange = (param, value) => {
-    setNoiseParams(prev => ({
-      ...prev,
-      [param]: value
     }));
   };
 
@@ -916,13 +1083,214 @@ function App() {
     return 0;
   }
 
+  // Calculate shortest path distance using BFS - updated to treat transformer nodes properly
+  function calculateShortestPathDistance(startIdx, endIdx, nodes, links) {
+    if (startIdx === -1 || endIdx === -1) return Infinity;
+    if (startIdx === endIdx) return 0;
+    
+    const visited = new Set();
+    const queue = [[startIdx, 0]]; // [nodeIdx, distance]
+    
+    while (queue.length > 0) {
+      const [currentIdx, distance] = queue.shift();
+      
+      if (currentIdx === endIdx) return distance;
+      if (visited.has(currentIdx)) continue;
+      
+      visited.add(currentIdx);
+      
+      // Find all connected buses
+      const currentNodeId = nodes[currentIdx].id;
+      
+      // Special handling for transformer nodes - skip them in path calculations
+      if (currentNodeId.startsWith('T')) {
+        // For transformer nodes, find connected buses
+        const connectedBuses = links.filter(link => {
+          const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+          const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+          return (sourceId === currentNodeId || targetId === currentNodeId) && 
+                 (sourceId.startsWith('B') || targetId.startsWith('B'));
+        }).map(link => {
+          const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+          const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+          return sourceId === currentNodeId ? targetId : sourceId;
+        });
+        
+        // Add these buses to the queue
+        connectedBuses.forEach(busId => {
+          const busIdx = nodes.findIndex(n => n.id === busId);
+          if (busIdx !== -1 && !visited.has(busIdx)) {
+            queue.push([busIdx, distance]); // Don't increment distance for transformer nodes
+          }
+        });
+        continue;
+      }
+      
+      // Get all links connected to this node
+      const connectedLinks = links.filter(link => {
+        const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+        const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+        return sourceId === currentNodeId || targetId === currentNodeId;
+      });
+      
+      // Get the connected node IDs
+      const connectedNodeIds = connectedLinks.map(link => {
+        const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+        const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+        return sourceId === currentNodeId ? targetId : sourceId;
+      });
+      
+      // Convert IDs to indexes and filter out already visited nodes
+      const connections = connectedNodeIds
+        .map(nodeId => nodes.findIndex(n => n.id === nodeId))
+        .filter(idx => idx !== -1 && !visited.has(idx));
+      
+      // Add connected buses to queue
+      connections.forEach(idx => {
+        // If the connected node is a transformer, don't increment distance
+        const isTransformer = nodes[idx]?.id.startsWith('T');
+        queue.push([idx, isTransformer ? distance : distance + 1]);
+      });
+    }
+    
+    return Infinity; // No path found
+  }
+
+  // Helper function to find the strongest influence from a set of nodes
+  function findStrongestInfluence(busIdx, nodeList, nodes, links) {
+    let strongestInfluence = 0;
+    let strongestNode = null;
+    
+    // For each source/sink
+    nodeList.forEach(node => {
+      // Find shortest path distance to this bus
+      const distance = calculateShortestPathDistance(busIdx, node.idx, nodes, links);
+      if (distance === Infinity) return; // No path exists
+      
+      // Influence decreases with distance
+      const influence = node.magnitude / (distance + 1);
+      
+      // Keep track of the strongest influence
+      if (influence > strongestInfluence) {
+        strongestInfluence = influence;
+        strongestNode = node;
+      }
+    });
+    
+    return { influence: strongestInfluence, node: strongestNode };
+  }
+
+  // Improved line flow direction algorithm with special handling for transformers
+  function getImprovedLineFlowDirection(fromIdx, toIdx) {
+    // Guard for missing data
+    if (!busPower || !Array.isArray(busPower) || fromIdx === -1 || toIdx === -1) return 0;
+
+    // Special handling for transformer links - find the actual buses they connect
+    const fromNode = initialNetworkData.nodes[fromIdx];
+    const toNode = initialNetworkData.nodes[toIdx];
+    
+    // If one endpoint is a transformer, treat it as transparent and look at the bus on the other side
+    let effectiveFromIdx = fromIdx;
+    let effectiveToIdx = toIdx;
+    
+    if (fromNode && fromNode.id.startsWith('T')) {
+      // Find the bus connected to this transformer (that isn't the "to" node)
+      const connectedBuses = initialNetworkData.links
+        .filter(link => {
+          const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+          const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+          return (sourceId === fromNode.id || targetId === fromNode.id) && 
+                 sourceId.startsWith('B') && targetId.startsWith('B');
+        })
+        .map(link => {
+          const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+          const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+          const busId = sourceId === fromNode.id ? targetId : sourceId;
+          return initialNetworkData.nodes.findIndex(n => n.id === busId);
+        })
+        .filter(idx => idx !== -1 && idx !== toIdx)[0];
+      
+      if (connectedBuses !== undefined) {
+        effectiveFromIdx = connectedBuses;
+      }
+    }
+    
+    if (toNode && toNode.id.startsWith('T')) {
+      // Find the bus connected to this transformer (that isn't the "from" node)
+      const connectedBuses = initialNetworkData.links
+        .filter(link => {
+          const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+          const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+          return (sourceId === toNode.id || targetId === toNode.id) && 
+                 sourceId.startsWith('B') && targetId.startsWith('B');
+        })
+        .map(link => {
+          const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+          const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+          const busId = sourceId === toNode.id ? targetId : sourceId;
+          return initialNetworkData.nodes.findIndex(n => n.id === busId);
+        })
+        .filter(idx => idx !== -1 && idx !== fromIdx)[0];
+      
+      if (connectedBuses !== undefined) {
+        effectiveToIdx = connectedBuses;
+      }
+    }
+    
+    // First, identify all significant source and sink nodes (only buses)
+    const sources = [];
+    const sinks = [];
+    const threshold = 0.1; // Significance threshold (adjust based on your system)
+    
+    busPower.forEach((power, idx) => {
+      if (!power || typeof power.p !== 'number') return;
+      
+      // Only consider buses, not transformers or other components
+      const nodeId = initialNetworkData.nodes[idx]?.id;
+      if (!nodeId || !nodeId.startsWith('B')) return;
+      
+      if (Math.abs(power.p) > threshold) {
+        if (power.p > 0) {
+          sources.push({ idx, magnitude: power.p, id: nodeId });
+        } else {
+          sinks.push({ idx, magnitude: Math.abs(power.p), id: nodeId });
+        }
+      }
+    });
+    
+    // If no significant sources or sinks, return 0 (no flow)
+    if (sources.length === 0 || sinks.length === 0) return 0;
+    
+    // Find the most influential source and sink for these buses
+    const fromSourceInfo = findStrongestInfluence(effectiveFromIdx, sources, initialNetworkData.nodes, initialNetworkData.links);
+    const fromSinkInfo = findStrongestInfluence(effectiveFromIdx, sinks, initialNetworkData.nodes, initialNetworkData.links);
+    const toSourceInfo = findStrongestInfluence(effectiveToIdx, sources, initialNetworkData.nodes, initialNetworkData.links);
+    const toSinkInfo = findStrongestInfluence(effectiveToIdx, sinks, initialNetworkData.nodes, initialNetworkData.links);
+    
+    // If we couldn't find influence for either bus, fall back to simple method
+    if (!fromSourceInfo.node || !fromSinkInfo.node || !toSourceInfo.node || !toSinkInfo.node) {
+      return getLineFlowDirectionSimple(fromIdx, toIdx);
+    }
+    
+    // Calculate net influence for both buses (source - sink)
+    const fromNetInfluence = fromSourceInfo.influence - fromSinkInfo.influence;
+    const toNetInfluence = toSourceInfo.influence - toSinkInfo.influence;
+    
+    // Flow is from higher net influence to lower net influence
+    if (Math.abs(fromNetInfluence - toNetInfluence) < 0.01) return 0; // No significant difference
+    
+    // Return direction: 1 means fromBus->toBus, -1 means toBus->fromBus
+    return fromNetInfluence > toNetInfluence ? 1 : -1;
+  }
+  
   // Process links so that for dir < 0, source and target are swapped
   const processedLinks = networkData.links.map(link => {
     const fromId = typeof link.source === 'object' ? link.source.id : link.source;
     const toId = typeof link.target === 'object' ? link.target.id : link.target;
     const fromIdx = initialNetworkData.nodes.findIndex(n => n.id === fromId);
     const toIdx = initialNetworkData.nodes.findIndex(n => n.id === toId);
-    const dir = getLineFlowDirectionSimple(fromIdx, toIdx);
+    // Use the improved direction algorithm
+    const dir = getImprovedLineFlowDirection(fromIdx, toIdx);
     if (dir < 0) {
       return { ...link, source: link.target, target: link.source };
     }
@@ -936,6 +1304,21 @@ function App() {
           Power System Simulator
         </Typography>
         
+        {selectionMode && (
+          <Box 
+            sx={{ 
+              position: 'absolute', 
+              top: 10, 
+              right: 10, 
+              zIndex: 2000 
+            }}
+          >
+            <Typography variant="body2" color="primary" fontWeight="bold" sx={{ mb: 1 }}>
+              {selectedComponent ? `Selected: ${selectedComponent.label}` : 'Click a component to select it'}
+            </Typography>
+          </Box>
+        )}
+        
         <PS_graph
           graphRef={graphRef}
           networkData={networkData}
@@ -943,17 +1326,29 @@ function App() {
           powerFlows={results?.power_flows}
           initialNetworkData={initialNetworkData}
           graphWidth={graphWidth}
-          getLineFlowDirectionSimple={getLineFlowDirectionSimple}
+          getImprovedLineFlowDirection={getImprovedLineFlowDirection}
           parameters={parameters}
+          selectionMode={selectionMode}
+          onComponentSelect={(component) => {
+            setSelectedComponent(component);
+            // Toggle component in monitored components list
+            if (component) {
+              setMonitoredComponents(prev => {
+                // If component is already monitored, remove it
+                if (prev.some(comp => comp.id === component.id)) {
+                  return prev.filter(comp => comp.id !== component.id);
+                }
+                // Otherwise add it to monitored components
+                return [...prev, component];
+              });
+            }
+          }}
+          selectedComponent={selectedComponent}
+          monitoredComponents={monitoredComponents}
         />
 
-        <ParameterControls
-          parameters={parameters}
-          setParameters={setParameters}
-          handleParameterChange={handleParameterChange}
-          handleTapChangerChange={handleTapChangerChange}
-          handleRemoveTapChange={handleRemoveTapChange}
-          handleAddTapChange={handleAddTapChange}
+        {/* Pass the required props to ButtonPanel */}
+        <ButtonPanel
           saveParameters={saveParameters}
           handleStartSimulation={handleStartSimulation}
           downloadExcel={downloadExcel}
@@ -962,7 +1357,41 @@ function App() {
           exportingPdf={exportingPdf}
           results={results}
           error={error}
+          selectionMode={selectionMode}
+          setSelectionMode={setSelectionMode}
+          selectedComponent={selectedComponent}
+          monitoredComponents={monitoredComponents}
         />
+
+        <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
+          <Grid container spacing={3}>
+            {/* Top Section: Parameter Controls */}
+            <Grid item xs={12}>
+              <ParameterControls 
+                parameters={parameters} 
+                setParameters={setParameters}
+                handleParameterChange={handleParameterChange}
+                handleTapChangerChange={handleTapChangerChange}
+                handleLineOutageChange={handleLineOutageChange}
+                handleReconnectChange={handleReconnectChange}
+                handleRemoveLineOutage={handleRemoveLineOutage}
+                handleAddLineOutage={handleAddLineOutage}
+                handleRemoveTapChange={handleRemoveTapChange}
+                handleAddTapChange={handleAddTapChange}
+                saveParameters={saveParameters}
+                handleStartSimulation={handleStartSimulation}
+                downloadExcel={downloadExcel}
+                exportPlotsToPDF={exportPlotsToPDF}
+                loading={loading}
+                exportingPdf={exportingPdf}
+                results={results}
+                error={error}
+                componentViewerOpen={componentViewerOpen}
+                setComponentViewerOpen={setComponentViewerOpen}
+              />
+            </Grid>
+          </Grid>
+        </Container>
       </Paper>
 
       {results && (
@@ -971,7 +1400,11 @@ function App() {
           parameters={parameters}
           initialNetworkData={initialNetworkData}
           busPower={results.bus_power}
-          getLineFlowDirectionSimple={getLineFlowDirectionSimple}
+          getImprovedLineFlowDirection={getImprovedLineFlowDirection}
+          monitoredComponents={monitoredComponents}
+          onRemoveComponent={(id) => {
+            setMonitoredComponents(prev => prev.filter(comp => comp.id !== id));
+          }}
         />
       )}
     </Container>
