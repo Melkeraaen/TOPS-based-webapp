@@ -450,7 +450,7 @@ const ResultsSection = ({
   parameters, 
   initialNetworkData, 
   busPower,
-  getImprovedLineFlowDirection,
+  getLineFlowDirectionSimple,
   monitoredComponents,
   onRemoveComponent
 }) => {
@@ -473,27 +473,6 @@ const ResultsSection = ({
       });
     }
   }, [results?.gen_speed, parameters?.lineOutage, initialNetworkData]);
-
-  // Merge links and transformers into a single array (do not mutate props)
-  const mergedLinks = React.useMemo(() => {
-    const links = initialNetworkData.links ? [...initialNetworkData.links] : [];
-    if (initialNetworkData.transformers) {
-      initialNetworkData.transformers.slice(1).forEach(row => {
-        links.push({
-          id: row[0],
-          type: 'transformer',
-          source: row[1],
-          target: row[2],
-          S_n: row[3],
-          V_n_from: row[4],
-          V_n_to: row[5],
-          R: row[6],
-          X: row[7]
-        });
-      });
-    }
-    return links;
-  }, [initialNetworkData]);
 
   if (!results) return null;
 
@@ -596,7 +575,7 @@ const ResultsSection = ({
                       x: 1.1,
                       y: 1
                     },
-                    margin: { t: 50, r: 100, b: 50 }
+                    margin: { t: 50, r: 100, b: 50, l: 50 }
                   }}
                   config={{
                     responsive: true,
@@ -1359,7 +1338,7 @@ const ResultsSection = ({
         </Paper>
       )}
 
-      {/* Line Power Flow Table */}
+      {/* Line Power Flow Checklist Table */}
       {busPower && busPower.length > 0 && (
         <Paper sx={{ p: 3, mb: 3 }}>
           <Typography variant="h6" gutterBottom sx={{ color: 'secondary.main' }}>Power Flow Directions</Typography>
@@ -1372,167 +1351,32 @@ const ResultsSection = ({
                   <TableCell>To Bus</TableCell>
                   <TableCell align="right">From Bus P (MW)</TableCell>
                   <TableCell align="right">To Bus P (MW)</TableCell>
-                  <TableCell align="center">Flow Direction</TableCell>
-                  <TableCell align="center">Strongest Influences</TableCell>
+                  <TableCell align="center">Direction</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {/* Collect unique transformer connections */}
-                {(() => {
-                  const transformerRows = [];
-                  // Manually define transformer connections
-                  const transformerDefs = [
-                    { label: 'T1-5', busA: 'B1', busB: 'B5' },
-                    { label: 'T2-6', busA: 'B2', busB: 'B6' },
-                    { label: 'T3-11', busA: 'B3', busB: 'B11' },
-                    { label: 'T4-10', busA: 'B4', busB: 'B10' },
-                  ];
-                  transformerDefs.forEach(({ label, busA, busB }) => {
-                    const idxA = initialNetworkData.nodes.findIndex(n => n.id === busA);
-                    const idxB = initialNetworkData.nodes.findIndex(n => n.id === busB);
-                    if (idxA === -1 || idxB === -1) return;
-                    const fromP = busPower[idxA]?.p ?? 0;
-                    const toP = busPower[idxB]?.p ?? 0;
-                    // Use simulation-based (particle) flow direction logic
-                    const dir = getImprovedLineFlowDirection(idxA, idxB);
-                    let dirText = '-';
-                    let dirArrow = '⇌';
-                    if (dir > 0) {
-                      dirText = `${busA.replace('B','')} → ${busB.replace('B','')}`;
-                      dirArrow = '→';
-                    } else if (dir < 0) {
-                      dirText = `${busB.replace('B','')} → ${busA.replace('B','')}`;
-                      dirArrow = '←';
-                    }
-                    // Find significant injections
-                    const sourcesAndSinks = [];
-                    busPower.forEach((power, bIdx) => {
-                      if (power && Math.abs(power.p) > 0.1) {
-                        const busId = initialNetworkData.nodes[bIdx]?.id;
-                        if (busId && busId.startsWith('B')) {
-                          const type = power.p > 0 ? 'Source' : 'Sink';
-                          sourcesAndSinks.push({
-                            id: busId.replace('B',''),
-                            value: power.p.toFixed(1),
-                            type
-                          });
-                        }
-                      }
-                    });
-                    sourcesAndSinks.sort((a, b) => Math.abs(parseFloat(b.value)) - Math.abs(parseFloat(a.value)));
-                    const topInfluencers = sourcesAndSinks.slice(0, 3);
-                    transformerRows.push(
-                      <TableRow key={label} sx={{ '&:nth-of-type(odd)': { backgroundColor: '#fafafa' }, '&:hover': { backgroundColor: '#f0f0f0' } }}>
-                        <TableCell>{label}</TableCell>
-                        <TableCell>{busA.replace('B','')}</TableCell>
-                        <TableCell>{busB.replace('B','')}</TableCell>
-                        <TableCell align="right">{fromP.toFixed(3)}</TableCell>
-                        <TableCell align="right">{toP.toFixed(3)}</TableCell>
-                        <TableCell align="center">
-                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <Typography fontSize="1.2rem" fontWeight="bold" color="primary">
-                              {dirArrow}
-                            </Typography>
-                            <Typography variant="body2" sx={{ ml: 1 }}>
-                              {dirText}
-                            </Typography>
-                          </Box>
-                        </TableCell>
-                        <TableCell align="center">
-                          <Box>
-                            {topInfluencers.map((inf, i) => (
-                              <Typography 
-                                key={i} 
-                                variant="body2" 
-                                color={inf.type === 'Source' ? 'success.main' : 'error.main'}
-                                sx={{ fontSize: '0.8rem' }}
-                              >
-                                {inf.id}: {inf.value} MW ({inf.type})
-                              </Typography>
-                            ))}
-                          </Box>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  });
-                  // Existing line logic
-                  const lineRows = [];
-                  mergedLinks.forEach((link, idx) => {
-                    if (link.type === 'line') {
-                      const fromId = typeof link.source === 'object' ? link.source.id : link.source;
-                      const toId = typeof link.target === 'object' ? link.target.id : link.target;
-                      if (fromId.startsWith('B') && toId.startsWith('B')) {
-                        const sorted = [fromId.replace('B',''), toId.replace('B','')].sort((a,b)=>a-b);
-                        const label = `L${sorted[0]}-${sorted[1]}`;
-                        const fromIdx = initialNetworkData.nodes.findIndex(n => n.id === fromId);
-                        const toIdx = initialNetworkData.nodes.findIndex(n => n.id === toId);
-                        const dir = getImprovedLineFlowDirection(fromIdx, toIdx);
-                        let dirText = '-';
-                        let dirArrow = '⇌';
-                        if (dir > 0) {
-                          dirText = `${sorted[0]} → ${sorted[1]}`;
-                          dirArrow = '→';
-                        } else if (dir < 0) {
-                          dirText = `${sorted[1]} → ${sorted[0]}`;
-                          dirArrow = '←';
-                        }
-                        const fromP = busPower[fromIdx]?.p ?? 0;
-                        const toP = busPower[toIdx]?.p ?? 0;
-                        // Find significant injections
-                        const sourcesAndSinks = [];
-                        busPower.forEach((power, bIdx) => {
-                          if (power && Math.abs(power.p) > 0.1) {
-                            const busId = initialNetworkData.nodes[bIdx]?.id;
-                            if (busId && busId.startsWith('B')) {
-                              const type = power.p > 0 ? 'Source' : 'Sink';
-                              sourcesAndSinks.push({
-                                id: busId.replace('B',''),
-                                value: power.p.toFixed(1),
-                                type
-                              });
-                            }
-                          }
-                        });
-                        sourcesAndSinks.sort((a, b) => Math.abs(parseFloat(b.value)) - Math.abs(parseFloat(a.value)));
-                        const topInfluencers = sourcesAndSinks.slice(0, 3);
-                        lineRows.push(
-                          <TableRow key={label} sx={{ '&:nth-of-type(odd)': { backgroundColor: '#fafafa' }, '&:hover': { backgroundColor: '#f0f0f0' } }}>
-                            <TableCell>{label}</TableCell>
-                            <TableCell>{sorted[0]}</TableCell>
-                            <TableCell>{sorted[1]}</TableCell>
-                            <TableCell align="right">{fromP.toFixed(3)}</TableCell>
-                            <TableCell align="right">{toP.toFixed(3)}</TableCell>
-                            <TableCell align="center">
-                              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <Typography fontSize="1.2rem" fontWeight="bold" color="primary">
-                                  {dirArrow}
-                                </Typography>
-                                <Typography variant="body2" sx={{ ml: 1 }}>
-                                  {dirText}
-                                </Typography>
-                              </Box>
-                            </TableCell>
-                            <TableCell align="center">
-                              <Box>
-                                {topInfluencers.map((inf, i) => (
-                                  <Typography 
-                                    key={i} 
-                                    variant="body2" 
-                                    color={inf.type === 'Source' ? 'success.main' : 'error.main'}
-                                    sx={{ fontSize: '0.8rem' }}
-                                  >
-                                    {inf.id}: {inf.value} MW ({inf.type})
-                                  </Typography>
-                                ))}
-                              </Box>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      }
-                    }
-                  });
-                  return [...transformerRows, ...lineRows];
-                })()}
+                {initialNetworkData.links.filter(l => l.type === 'line' || l.type === 'transformer').map((link, idx) => {
+                  const fromId = typeof link.source === 'object' ? link.source.id : link.source;
+                  const toId = typeof link.target === 'object' ? link.target.id : link.target;
+                  const fromIdx = initialNetworkData.nodes.findIndex(n => n.id === fromId);
+                  const toIdx = initialNetworkData.nodes.findIndex(n => n.id === toId);
+                  const fromP = busPower[fromIdx]?.p ?? 0;
+                  const toP = busPower[toIdx]?.p ?? 0;
+                  const dir = getLineFlowDirectionSimple(fromIdx, toIdx);
+                  let dirText = '-';
+                  if (dir > 0) dirText = `towards bus ${toId}`;
+                  else if (dir < 0) dirText = `towards bus ${fromId}`;
+                  return (
+                    <TableRow key={link.id || idx} sx={{ '&:nth-of-type(odd)': { backgroundColor: '#fafafa' } }}>
+                      <TableCell>{link.id || `${fromId}-${toId}`}</TableCell>
+                      <TableCell>{fromId}</TableCell>
+                      <TableCell>{toId}</TableCell>
+                      <TableCell align="right">{fromP.toFixed(3)}</TableCell>
+                      <TableCell align="right">{toP.toFixed(3)}</TableCell>
+                      <TableCell align="center">{dirText}</TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </TableContainer>

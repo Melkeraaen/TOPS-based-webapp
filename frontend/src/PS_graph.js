@@ -55,22 +55,6 @@ const isSelectable = (node) => {
 
 const isLinkSelectable = () => false;
 
-// Helper to extract transformer ID from a link
-const getTransformerIdFromLink = (link) => {
-  const ids = [link.source, link.target].map(x => typeof x === 'object' ? x.id : x);
-  for (const id of ids) {
-    if (typeof id === 'string' && id.startsWith('T')) return id;
-  }
-  return null;
-};
-
-const trafoMap = {
-  T1: { busA: 'B1', busB: 'B5' },
-  T2: { busA: 'B2', busB: 'B6' },
-  T3: { busA: 'B3', busB: 'B11' },
-  T4: { busA: 'B4', busB: 'B10' },
-};
-
 const PS_graph = ({ 
   graphRef,
   networkData, 
@@ -78,7 +62,7 @@ const PS_graph = ({
   powerFlows, 
   initialNetworkData,
   graphWidth,
-  getImprovedLineFlowDirection,
+  getLineFlowDirectionSimple,
   parameters,
   selectionMode,
   onComponentSelect,
@@ -100,26 +84,12 @@ const PS_graph = ({
     const toId = typeof link.target === 'object' ? link.target.id : link.target;
     const fromIdx = initialNetworkData.nodes.findIndex(n => n.id === fromId);
     const toIdx = initialNetworkData.nodes.findIndex(n => n.id === toId);
-    // Only swap for lines, not transformers
-    if (link.type === 'line') {
-      const dir = getImprovedLineFlowDirection(fromIdx, toIdx);
-      if (dir < 0) {
-        return { ...link, source: link.target, target: link.source };
-      }
+    const dir = getLineFlowDirectionSimple(fromIdx, toIdx);
+    if (dir < 0) {
+      return { ...link, source: link.target, target: link.source };
     }
     return link;
   });
-
-  // Cache transformer directions for this render
-  const transformerDirections = React.useMemo(() => {
-    const out = {};
-    Object.entries(trafoMap).forEach(([trafoId, { busA, busB }]) => {
-      const idxA = initialNetworkData.nodes.findIndex(n => n.id === busA);
-      const idxB = initialNetworkData.nodes.findIndex(n => n.id === busB);
-      out[trafoId] = getImprovedLineFlowDirection(idxA, idxB);
-    });
-    return out;
-  }, [initialNetworkData, getImprovedLineFlowDirection, busPower]);
 
   useEffect(() => {
     if (!forceGraphRef.current) return;
@@ -290,47 +260,23 @@ const PS_graph = ({
             }}
             linkDirectionalParticles={link => {
               if (!busPower) return 0;
-              if (["generator_connection", "shunt_connection", "load_connection"].includes(link.type)) return 0;
-              if (link.type === 'transformer') {
-                const trafoId = getTransformerIdFromLink(link);
-                if (trafoId && trafoMap[trafoId]) {
-                  const { busA, busB } = trafoMap[trafoId];
-                  const idxA = initialNetworkData.nodes.findIndex(n => n.id === busA);
-                  const idxB = initialNetworkData.nodes.findIndex(n => n.id === busB);
-                  const dir = getImprovedLineFlowDirection(idxA, idxB);
-                  return dir !== 0 ? 4 : 0;
-                }
-                return 0;
-              }
-              // Default for lines
+              if (['generator_connection', 'shunt_connection', 'load_connection'].includes(link.type)) return 0;
               const fromId = typeof link.source === 'object' ? link.source.id : link.source;
               const toId = typeof link.target === 'object' ? link.target.id : link.target;
               const fromIdx = initialNetworkData.nodes.findIndex(n => n.id === fromId);
               const toIdx = initialNetworkData.nodes.findIndex(n => n.id === toId);
-              const dir = getImprovedLineFlowDirection(fromIdx, toIdx);
+              const dir = getLineFlowDirectionSimple(fromIdx, toIdx);
               return dir !== 0 ? 4 : 0;
             }}
             linkDirectionalParticleWidth={3}
             linkDirectionalParticleSpeed={link => {
               if (!busPower) return 0;
-              if (link.type === 'transformer') {
-                const trafoId = getTransformerIdFromLink(link);
-                if (trafoId && trafoMap[trafoId]) {
-                  const { busA, busB } = trafoMap[trafoId];
-                  const idxA = initialNetworkData.nodes.findIndex(n => n.id === busA);
-                  const idxB = initialNetworkData.nodes.findIndex(n => n.id === busB);
-                  const dir = getImprovedLineFlowDirection(idxA, idxB);
-                  return dir > 0 ? 0.01 : dir < 0 ? -0.01 : 0;
-                }
-                return 0;
-              }
-              // Default for lines
               const fromId = typeof link.source === 'object' ? link.source.id : link.source;
               const toId = typeof link.target === 'object' ? link.target.id : link.target;
               const fromIdx = initialNetworkData.nodes.findIndex(n => n.id === fromId);
               const toIdx = initialNetworkData.nodes.findIndex(n => n.id === toId);
               if (fromIdx === -1 || toIdx === -1) return 0;
-              const dir = getImprovedLineFlowDirection(fromIdx, toIdx);
+              const dir = getLineFlowDirectionSimple(fromIdx, toIdx);
               return dir > 0 ? 0.01 : dir < 0 ? -0.01 : 0;
             }}
             linkLabel={link => {

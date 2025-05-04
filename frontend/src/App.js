@@ -1083,214 +1083,13 @@ function App() {
     return 0;
   }
 
-  // Calculate shortest path distance using BFS - updated to treat transformer nodes properly
-  function calculateShortestPathDistance(startIdx, endIdx, nodes, links) {
-    if (startIdx === -1 || endIdx === -1) return Infinity;
-    if (startIdx === endIdx) return 0;
-    
-    const visited = new Set();
-    const queue = [[startIdx, 0]]; // [nodeIdx, distance]
-    
-    while (queue.length > 0) {
-      const [currentIdx, distance] = queue.shift();
-      
-      if (currentIdx === endIdx) return distance;
-      if (visited.has(currentIdx)) continue;
-      
-      visited.add(currentIdx);
-      
-      // Find all connected buses
-      const currentNodeId = nodes[currentIdx].id;
-      
-      // Special handling for transformer nodes - skip them in path calculations
-      if (currentNodeId.startsWith('T')) {
-        // For transformer nodes, find connected buses
-        const connectedBuses = links.filter(link => {
-          const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-          const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-          return (sourceId === currentNodeId || targetId === currentNodeId) && 
-                 (sourceId.startsWith('B') || targetId.startsWith('B'));
-        }).map(link => {
-          const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-          const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-          return sourceId === currentNodeId ? targetId : sourceId;
-        });
-        
-        // Add these buses to the queue
-        connectedBuses.forEach(busId => {
-          const busIdx = nodes.findIndex(n => n.id === busId);
-          if (busIdx !== -1 && !visited.has(busIdx)) {
-            queue.push([busIdx, distance]); // Don't increment distance for transformer nodes
-          }
-        });
-        continue;
-      }
-      
-      // Get all links connected to this node
-      const connectedLinks = links.filter(link => {
-        const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-        const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-        return sourceId === currentNodeId || targetId === currentNodeId;
-      });
-      
-      // Get the connected node IDs
-      const connectedNodeIds = connectedLinks.map(link => {
-        const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-        const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-        return sourceId === currentNodeId ? targetId : sourceId;
-      });
-      
-      // Convert IDs to indexes and filter out already visited nodes
-      const connections = connectedNodeIds
-        .map(nodeId => nodes.findIndex(n => n.id === nodeId))
-        .filter(idx => idx !== -1 && !visited.has(idx));
-      
-      // Add connected buses to queue
-      connections.forEach(idx => {
-        // If the connected node is a transformer, don't increment distance
-        const isTransformer = nodes[idx]?.id.startsWith('T');
-        queue.push([idx, isTransformer ? distance : distance + 1]);
-      });
-    }
-    
-    return Infinity; // No path found
-  }
-
-  // Helper function to find the strongest influence from a set of nodes
-  function findStrongestInfluence(busIdx, nodeList, nodes, links) {
-    let strongestInfluence = 0;
-    let strongestNode = null;
-    
-    // For each source/sink
-    nodeList.forEach(node => {
-      // Find shortest path distance to this bus
-      const distance = calculateShortestPathDistance(busIdx, node.idx, nodes, links);
-      if (distance === Infinity) return; // No path exists
-      
-      // Influence decreases with distance
-      const influence = node.magnitude / (distance + 1);
-      
-      // Keep track of the strongest influence
-      if (influence > strongestInfluence) {
-        strongestInfluence = influence;
-        strongestNode = node;
-      }
-    });
-    
-    return { influence: strongestInfluence, node: strongestNode };
-  }
-
-  // Improved line flow direction algorithm with special handling for transformers
-  function getImprovedLineFlowDirection(fromIdx, toIdx) {
-    // Guard for missing data
-    if (!busPower || !Array.isArray(busPower) || fromIdx === -1 || toIdx === -1) return 0;
-
-    // Special handling for transformer links - find the actual buses they connect
-    const fromNode = initialNetworkData.nodes[fromIdx];
-    const toNode = initialNetworkData.nodes[toIdx];
-    
-    // If one endpoint is a transformer, treat it as transparent and look at the bus on the other side
-    let effectiveFromIdx = fromIdx;
-    let effectiveToIdx = toIdx;
-    
-    if (fromNode && fromNode.id.startsWith('T')) {
-      // Find the bus connected to this transformer (that isn't the "to" node)
-      const connectedBuses = initialNetworkData.links
-        .filter(link => {
-          const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-          const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-          return (sourceId === fromNode.id || targetId === fromNode.id) && 
-                 sourceId.startsWith('B') && targetId.startsWith('B');
-        })
-        .map(link => {
-          const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-          const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-          const busId = sourceId === fromNode.id ? targetId : sourceId;
-          return initialNetworkData.nodes.findIndex(n => n.id === busId);
-        })
-        .filter(idx => idx !== -1 && idx !== toIdx)[0];
-      
-      if (connectedBuses !== undefined) {
-        effectiveFromIdx = connectedBuses;
-      }
-    }
-    
-    if (toNode && toNode.id.startsWith('T')) {
-      // Find the bus connected to this transformer (that isn't the "from" node)
-      const connectedBuses = initialNetworkData.links
-        .filter(link => {
-          const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-          const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-          return (sourceId === toNode.id || targetId === toNode.id) && 
-                 sourceId.startsWith('B') && targetId.startsWith('B');
-        })
-        .map(link => {
-          const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-          const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-          const busId = sourceId === toNode.id ? targetId : sourceId;
-          return initialNetworkData.nodes.findIndex(n => n.id === busId);
-        })
-        .filter(idx => idx !== -1 && idx !== fromIdx)[0];
-      
-      if (connectedBuses !== undefined) {
-        effectiveToIdx = connectedBuses;
-      }
-    }
-    
-    // First, identify all significant source and sink nodes (only buses)
-    const sources = [];
-    const sinks = [];
-    const threshold = 0.1; // Significance threshold (adjust based on your system)
-    
-    busPower.forEach((power, idx) => {
-      if (!power || typeof power.p !== 'number') return;
-      
-      // Only consider buses, not transformers or other components
-      const nodeId = initialNetworkData.nodes[idx]?.id;
-      if (!nodeId || !nodeId.startsWith('B')) return;
-      
-      if (Math.abs(power.p) > threshold) {
-        if (power.p > 0) {
-          sources.push({ idx, magnitude: power.p, id: nodeId });
-        } else {
-          sinks.push({ idx, magnitude: Math.abs(power.p), id: nodeId });
-        }
-      }
-    });
-    
-    // If no significant sources or sinks, return 0 (no flow)
-    if (sources.length === 0 || sinks.length === 0) return 0;
-    
-    // Find the most influential source and sink for these buses
-    const fromSourceInfo = findStrongestInfluence(effectiveFromIdx, sources, initialNetworkData.nodes, initialNetworkData.links);
-    const fromSinkInfo = findStrongestInfluence(effectiveFromIdx, sinks, initialNetworkData.nodes, initialNetworkData.links);
-    const toSourceInfo = findStrongestInfluence(effectiveToIdx, sources, initialNetworkData.nodes, initialNetworkData.links);
-    const toSinkInfo = findStrongestInfluence(effectiveToIdx, sinks, initialNetworkData.nodes, initialNetworkData.links);
-    
-    // If we couldn't find influence for either bus, fall back to simple method
-    if (!fromSourceInfo.node || !fromSinkInfo.node || !toSourceInfo.node || !toSinkInfo.node) {
-      return getLineFlowDirectionSimple(fromIdx, toIdx);
-    }
-    
-    // Calculate net influence for both buses (source - sink)
-    const fromNetInfluence = fromSourceInfo.influence - fromSinkInfo.influence;
-    const toNetInfluence = toSourceInfo.influence - toSinkInfo.influence;
-    
-    // Flow is from higher net influence to lower net influence
-    if (Math.abs(fromNetInfluence - toNetInfluence) < 0.01) return 0; // No significant difference
-    
-    // Return direction: 1 means fromBus->toBus, -1 means toBus->fromBus
-    return fromNetInfluence > toNetInfluence ? 1 : -1;
-  }
-  
   // Process links so that for dir < 0, source and target are swapped
   const processedLinks = networkData.links.map(link => {
     const fromId = typeof link.source === 'object' ? link.source.id : link.source;
     const toId = typeof link.target === 'object' ? link.target.id : link.target;
     const fromIdx = initialNetworkData.nodes.findIndex(n => n.id === fromId);
     const toIdx = initialNetworkData.nodes.findIndex(n => n.id === toId);
-    // Use the improved direction algorithm
-    const dir = getImprovedLineFlowDirection(fromIdx, toIdx);
+    const dir = getLineFlowDirectionSimple(fromIdx, toIdx);
     if (dir < 0) {
       return { ...link, source: link.target, target: link.source };
     }
@@ -1326,7 +1125,7 @@ function App() {
           powerFlows={results?.power_flows}
           initialNetworkData={initialNetworkData}
           graphWidth={graphWidth}
-          getImprovedLineFlowDirection={getImprovedLineFlowDirection}
+          getLineFlowDirectionSimple={getLineFlowDirectionSimple}
           parameters={parameters}
           selectionMode={selectionMode}
           onComponentSelect={(component) => {
@@ -1400,7 +1199,7 @@ function App() {
           parameters={parameters}
           initialNetworkData={initialNetworkData}
           busPower={results.bus_power}
-          getImprovedLineFlowDirection={getImprovedLineFlowDirection}
+          getLineFlowDirectionSimple={getLineFlowDirectionSimple}
           monitoredComponents={monitoredComponents}
           onRemoveComponent={(id) => {
             setMonitoredComponents(prev => prev.filter(comp => comp.id !== id));
