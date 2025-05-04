@@ -248,9 +248,103 @@ const getPowerFlowInfo = (link, powerFlows) => {
 };
 
 // Helper function to determine line flow direction
-const getLineFlowDirectionSimple = (fromIdx, toIdx) => {
-  if (fromIdx === -1 || toIdx === -1) return 0;
-  return fromIdx < toIdx ? 1 : -1;
+const getLineFlowDirectionSimple = (busPower, fromIdx, toIdx) => {
+  // Guard for missing data
+  if (!busPower || !Array.isArray(busPower) || fromIdx === -1 || toIdx === -1) return 0;
+
+  const pFrom = busPower[fromIdx]?.p ?? 0;
+  const pTo = busPower[toIdx]?.p ?? 0;
+
+  // Helper: is this bus neutral?
+  const isNeutral = (p) => Math.abs(p) < 1e-4;
+  
+  // Find the index for Bus B8
+  const bus8Idx = initialNetworkData.nodes.findIndex(n => n.id === 'B8');
+
+  // Helper function to find the deepest sink/weakest source using BFS
+  function findDeepestSinkP(startIdx, excludeIdx) {
+    const visited = new Set([excludeIdx]);
+    const queue = [startIdx];
+    let minP = Infinity; // Initialize minimum P found so far
+    let foundNonNeutral = false;
+
+    while (queue.length > 0) {
+      const idx = queue.shift();
+      if (visited.has(idx)) continue;
+      visited.add(idx);
+      
+      const p = busPower[idx]?.p ?? 0;
+      
+      if (!isNeutral(p)) {
+        minP = Math.min(minP, p); // Track the minimum P found
+        foundNonNeutral = true;
+      }
+      
+      // Add neighbors
+      const nodeId = initialNetworkData.nodes[idx].id;
+      const neighbors = initialNetworkData.links
+        .filter(l => {
+          const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
+          const targetId = typeof l.target === 'object' ? l.target.id : l.target;
+          // Only consider neighbors that haven't been visited and are not the excluded node
+          return (
+            (sourceId === nodeId && !visited.has(initialNetworkData.nodes.findIndex(n => n.id === targetId))) || 
+            (targetId === nodeId && !visited.has(initialNetworkData.nodes.findIndex(n => n.id === sourceId)))
+          );
+        })
+        .map(l =>
+          (typeof l.source === 'object' ? l.source.id : l.source) === nodeId
+            ? initialNetworkData.nodes.findIndex(n => n.id === (typeof l.target === 'object' ? l.target.id : l.target))
+            : initialNetworkData.nodes.findIndex(n => n.id === (typeof l.source === 'object' ? l.source.id : l.source))
+        )
+        .filter(i => i !== -1);
+      
+      queue.push(...neighbors);
+    }
+    return foundNonNeutral ? minP : null; // Return min P found, or null if no non-neutral node
+  }
+
+  // Function to determine direction using BFS
+  const determineDirectionFromBFS = () => {
+    const pFromSink = findDeepestSinkP(fromIdx, toIdx);
+    const pToSink = findDeepestSinkP(toIdx, fromIdx);
+
+    if (pFromSink !== null && pToSink !== null) {
+      if (pFromSink < pToSink) return -1; // Flow toward fromIdx (deeper sink)
+      if (pToSink < pFromSink) return 1;  // Flow toward toIdx (deeper sink)
+      return 0;
+    }
+    if (pFromSink !== null) return -1; // Only from side found a sink/source
+    if (pToSink !== null) return 1;  // Only to side found a sink/source
+    return 0;
+  };
+
+  // Main Logic:
+  // Case 1: Both are not neutral
+  if (!isNeutral(pFrom) && !isNeutral(pTo)) {
+    if (pFrom < pTo) return -1;
+    if (pTo < pFrom) return 1;
+    return 0;
+  }
+
+  // Case 2: One is neutral
+  if (isNeutral(pFrom) && !isNeutral(pTo)) {
+    if (fromIdx === bus8Idx) { // Special case: If B8 is the neutral one, use BFS
+      return determineDirectionFromBFS();
+    }
+    // Otherwise, use standard logic
+    return pTo < 0 ? 1 : -1;
+  }
+  if (!isNeutral(pFrom) && isNeutral(pTo)) {
+    if (toIdx === bus8Idx) { // Special case: If B8 is the neutral one, use BFS
+      return determineDirectionFromBFS();
+    }
+    // Otherwise, use standard logic
+    return pFrom < 0 ? -1 : 1;
+  }
+
+  // Case 3: Both are neutral (already handled by BFS)
+  return determineDirectionFromBFS();
 };
 
 function App() {
@@ -1017,70 +1111,46 @@ function App() {
     return null; // No non-neutral found
   }
 
-  function getLineFlowDirectionSimple(fromIdx, toIdx) {
-    // Guard for missing data
-    if (!busPower || !Array.isArray(busPower)) return 0;
+  // If both are neutral, walk the network to find the deepest sink/weakest source
+  function findDeepestSinkP(startIdx, excludeIdx) {
+    const visited = new Set([excludeIdx]);
+    const queue = [startIdx];
+    let minP = Infinity; // Initialize minimum P found so far
+    let foundNonNeutral = false;
 
-    const pFrom = busPower[fromIdx]?.p ?? 0;
-    const pTo = busPower[toIdx]?.p ?? 0;
-
-    // Helper: is this bus neutral?
-    const isNeutral = (p) => Math.abs(p) < 1e-4;
-
-    // If both are not neutral, flow is toward the more negative (smaller) P
-    if (!isNeutral(pFrom) && !isNeutral(pTo)) {
-      if (pFrom < pTo) return -1; // Flow toward fromIdx
-      if (pTo < pFrom) return 1;  // Flow toward toIdx
-      return 0;
-    }
-
-    // If only one is neutral, flow is toward the non-neutral
-    if (isNeutral(pFrom) && !isNeutral(pTo)) {
-      return pTo < 0 ? 1 : -1; // If to is a load, flow toward toIdx; if generator, away
-    }
-    if (!isNeutral(pFrom) && isNeutral(pTo)) {
-      return pFrom < 0 ? -1 : 1; // If from is a load, flow toward fromIdx; if generator, away
-    }
-
-    // If both are neutral, walk the network to find nearest non-neutral P
-    function findNearestNonNeutralP(startIdx, excludeIdx) {
-      const visited = new Set([excludeIdx]);
-      const queue = [startIdx];
-      while (queue.length > 0) {
-        const idx = queue.shift();
-        if (visited.has(idx)) continue;
-        visited.add(idx);
-        const p = busPower[idx]?.p ?? 0;
-        if (!isNeutral(p)) return p;
-        // Add neighbors
-        const nodeId = initialNetworkData.nodes[idx].id;
-        const neighbors = initialNetworkData.links
-          .filter(l =>
-            (typeof l.source === 'object' ? l.source.id : l.source) === nodeId ||
-            (typeof l.target === 'object' ? l.target.id : l.target) === nodeId
-          )
-          .map(l =>
-            (typeof l.source === 'object' ? l.source.id : l.source) === nodeId
-              ? initialNetworkData.nodes.findIndex(n => n.id === (typeof l.target === 'object' ? l.target.id : l.target))
-              : initialNetworkData.nodes.findIndex(n => n.id === (typeof l.source === 'object' ? l.source.id : l.source))
-          )
-          .filter(i => i !== -1 && !visited.has(i));
-        queue.push(...neighbors);
+    while (queue.length > 0) {
+      const idx = queue.shift();
+      if (visited.has(idx)) continue;
+      visited.add(idx);
+      
+      const p = busPower[idx]?.p ?? 0;
+      
+      if (!isNeutral(p)) {
+        minP = Math.min(minP, p); // Track the minimum P found
+        foundNonNeutral = true;
       }
-      return null;
+      
+      // Add neighbors
+      const nodeId = initialNetworkData.nodes[idx].id;
+      const neighbors = initialNetworkData.links
+        .filter(l => {
+          const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
+          const targetId = typeof l.target === 'object' ? l.target.id : l.target;
+          return (
+            (sourceId === nodeId && !visited.has(initialNetworkData.nodes.findIndex(n => n.id === targetId))) || 
+            (targetId === nodeId && !visited.has(initialNetworkData.nodes.findIndex(n => n.id === sourceId)))
+          );
+        })
+        .map(l =>
+          (typeof l.source === 'object' ? l.source.id : l.source) === nodeId
+            ? initialNetworkData.nodes.findIndex(n => n.id === (typeof l.target === 'object' ? l.target.id : l.target))
+            : initialNetworkData.nodes.findIndex(n => n.id === (typeof l.source === 'object' ? l.source.id : l.source))
+        )
+        .filter(i => i !== -1);
+      
+      queue.push(...neighbors);
     }
-
-    const pFromNearest = findNearestNonNeutralP(fromIdx, toIdx);
-    const pToNearest = findNearestNonNeutralP(toIdx, fromIdx);
-
-    if (pFromNearest !== null && pToNearest !== null) {
-      if (pFromNearest < pToNearest) return -1; // Flow toward fromIdx
-      if (pToNearest < pFromNearest) return 1;  // Flow toward toIdx
-      return 0;
-    }
-    if (pFromNearest !== null) return -1;
-    if (pToNearest !== null) return 1;
-    return 0;
+    return foundNonNeutral ? minP : null; // Return min P found, or null if no non-neutral node
   }
 
   // Process links so that for dir < 0, source and target are swapped
@@ -1089,7 +1159,7 @@ function App() {
     const toId = typeof link.target === 'object' ? link.target.id : link.target;
     const fromIdx = initialNetworkData.nodes.findIndex(n => n.id === fromId);
     const toIdx = initialNetworkData.nodes.findIndex(n => n.id === toId);
-    const dir = getLineFlowDirectionSimple(fromIdx, toIdx);
+    const dir = getLineFlowDirectionSimple(busPower, fromIdx, toIdx);
     if (dir < 0) {
       return { ...link, source: link.target, target: link.source };
     }
@@ -1125,7 +1195,7 @@ function App() {
           powerFlows={results?.power_flows}
           initialNetworkData={initialNetworkData}
           graphWidth={graphWidth}
-          getLineFlowDirectionSimple={getLineFlowDirectionSimple}
+          getLineFlowDirectionSimple={(fromIdx, toIdx) => getLineFlowDirectionSimple(busPower, fromIdx, toIdx)}
           parameters={parameters}
           selectionMode={selectionMode}
           onComponentSelect={(component) => {
@@ -1199,7 +1269,7 @@ function App() {
           parameters={parameters}
           initialNetworkData={initialNetworkData}
           busPower={results.bus_power}
-          getLineFlowDirectionSimple={getLineFlowDirectionSimple}
+          getLineFlowDirectionSimple={(fromIdx, toIdx) => getLineFlowDirectionSimple(busPower, fromIdx, toIdx)}
           monitoredComponents={monitoredComponents}
           onRemoveComponent={(id) => {
             setMonitoredComponents(prev => prev.filter(comp => comp.id !== id));
