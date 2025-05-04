@@ -386,7 +386,7 @@ const PowerInjectionsPlot = ({
         </Select>
       </Box>
     
-      <div className="plot-for-export" data-title="Power Injections Comparison" style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+      <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
         <Plot
           key={plotKey}
           data={[
@@ -485,6 +485,7 @@ const ResultsSection = ({
           monitoredComponents={monitoredComponents} 
           initialNetworkData={initialNetworkData}
           onRemoveComponent={onRemoveComponent}
+          defaultPlotLayout={defaultPlotLayout}
         />
       )}
 
@@ -500,7 +501,7 @@ const ResultsSection = ({
         <Grid container spacing={3}>
           {/* Bus Voltage Plot */}
           <Grid item xs={12} md={6}>
-            <div className="plot-for-export" data-title="Bus Voltage" style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
               {results && results.v && results.v[0] ? (
                 <Plot
                   data={results.v[0].map((_, idx) => ({
@@ -526,7 +527,8 @@ const ResultsSection = ({
                   }}
                   config={{
                     responsive: true,
-                    displayModeBar: false
+                    displayModeBar: true,
+                    displaylogo: false
                   }}
                   style={{ width: '100%', height: '400px' }}
                 />
@@ -538,7 +540,7 @@ const ResultsSection = ({
 
           {/* Voltage Angle Time Plot */}
           <Grid item xs={12} md={6}>
-            <div className="plot-for-export" data-title="Bus Voltage Angles" style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
               {results?.v_angle && Array.isArray(results.v_angle) && results.v_angle.length > 0 && Array.isArray(results.v_angle[0]) ? (
                 <Plot
                   data={results.v_angle[0].map((_, busIdx) => ({
@@ -579,7 +581,8 @@ const ResultsSection = ({
                   }}
                   config={{
                     responsive: true,
-                    displayModeBar: false
+                    displayModeBar: true,
+                    displaylogo: false
                   }}
                   style={{ width: '100%', height: '400px' }}
                 />
@@ -591,7 +594,7 @@ const ResultsSection = ({
 
           {/* Voltage Phasor Plot */}
           <Grid item xs={12} md={6}>
-            <div className="plot-for-export" data-title="Bus Voltage Phasors" style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
               {results?.v && results.v[0] ? (
                 <Plot
                   data={results.v[0].map((_, busIdx) => {
@@ -659,7 +662,8 @@ const ResultsSection = ({
                   }}
                   config={{
                     responsive: true,
-                    displayModeBar: false
+                    displayModeBar: true,
+                    displaylogo: false
                   }}
                   useResizeHandler={true}
                   style={{ width: '100%', height: '400px' }}
@@ -672,7 +676,7 @@ const ResultsSection = ({
 
           {/* Generator Current Plot */}
           <Grid item xs={12} md={6}>
-            <div className="plot-for-export" data-title="Generator Current" style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
               {results && results.gen_I && results.gen_I[0] ? (
                 <Plot
                   data={results.gen_I[0].map((_, idx) => ({
@@ -694,7 +698,8 @@ const ResultsSection = ({
                   }}
                   config={{
                     responsive: true,
-                    displayModeBar: false
+                    displayModeBar: true,
+                    displaylogo: false
                   }}
                   style={{ width: '100%', height: '400px' }}
                 />
@@ -706,7 +711,7 @@ const ResultsSection = ({
 
           {/* Load Current Plot */}
           <Grid item xs={12} md={6}>
-            <div className="plot-for-export" data-title="Load Current" style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
               {results && results.load_I && results.load_I[0] ? (
                 <Plot
                   data={results.load_I[0].map((_, idx) => ({
@@ -728,7 +733,8 @@ const ResultsSection = ({
                   }}
                   config={{
                     responsive: true,
-                    displayModeBar: false
+                    displayModeBar: true,
+                    displaylogo: false
                   }}
                   style={{ width: '100%', height: '400px' }}
                 />
@@ -740,7 +746,7 @@ const ResultsSection = ({
 
           {/* Active Power Plot */}
           <Grid item xs={12} md={6}>
-            <div className="plot-for-export" data-title="Load Active Power" style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
               {results && results.load_P && results.load_P[0] ? (
                 <Plot
                   data={results.load_P[0].map((_, idx) => ({
@@ -763,7 +769,8 @@ const ResultsSection = ({
                   }}
                   config={{
                     responsive: true,
-                    displayModeBar: false
+                    displayModeBar: true,
+                    displaylogo: false
                   }}
                   style={{ width: '100%', height: '400px' }}
                 />
@@ -775,7 +782,7 @@ const ResultsSection = ({
 
           {/* Reactive Power Plot */}
           <Grid item xs={12} md={6}>
-            <div className="plot-for-export" data-title="Load Reactive Power" style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
               {results && results.load_Q && results.load_Q[0] ? (
                 <Plot
                   data={results.load_Q[0].map((_, idx) => ({
@@ -797,7 +804,8 @@ const ResultsSection = ({
                   }}
                   config={{
                     responsive: true,
-                    displayModeBar: false
+                    displayModeBar: true,
+                    displaylogo: false
                   }}
                   style={{ width: '100%', height: '400px' }}
                 />
@@ -809,7 +817,7 @@ const ResultsSection = ({
 
           {/* Generator Speed Plot */}
           <Grid item xs={12} md={6}>
-            <div className="plot-for-export" data-title="Generator Speeds" style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
               {results?.gen_speed && results.gen_speed[0] ? (
                 <Plot
                   data={[
@@ -834,7 +842,8 @@ const ResultsSection = ({
                   }}
                   config={{
                     responsive: true,
-                    displayModeBar: false
+                    displayModeBar: true,
+                    displaylogo: false
                   }}
                   style={{ width: '100%', height: '400px' }}
                 />
@@ -846,7 +855,7 @@ const ResultsSection = ({
 
           {/* Frequency Gauge Plot */}
           <Grid item xs={12} md={6}>
-            <div className="plot-for-export" data-title="System Frequency" style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
               {results?.gen_speed && results.gen_speed[0] ? (() => {
                 // Get latest generator speeds
                 const latestSpeeds = results.gen_speed[results.gen_speed.length - 1];
@@ -961,7 +970,8 @@ const ResultsSection = ({
                     layout={layout}
                     config={{
                       responsive: true,
-                      displayModeBar: false
+                      displayModeBar: true,
+                      displaylogo: false
                     }}
                     style={{ 
                       width: '100%',
@@ -982,7 +992,7 @@ const ResultsSection = ({
             <>
               {/* PLL Angle Plot */}
               <Grid item xs={12} md={6}>
-                <div className="plot-for-export" data-title="PLL Angles" style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+                <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
                   {Array.isArray(results.v_angle) && Array.isArray(results.pll1_angle) && Array.isArray(results.pll2_angle) && results.v_angle.length > 0 ? (
                     <Plot
                       data={[
@@ -1028,7 +1038,8 @@ const ResultsSection = ({
                       }}
                       config={{
                         responsive: true,
-                        displayModeBar: false
+                        displayModeBar: true,
+                        displaylogo: false
                       }}
                       style={{ width: '100%', height: '400px' }}
                     />
@@ -1040,7 +1051,7 @@ const ResultsSection = ({
 
               {/* PLL Frequency Plot */}
               <Grid item xs={12} md={6}>
-                <div className="plot-for-export" data-title="PLL Frequencies" style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+                <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
                   {Array.isArray(results.pll1_freq) && Array.isArray(results.pll2_freq) && results.pll1_freq.length > 0 ? (
                     <Plot
                       data={[
@@ -1078,7 +1089,8 @@ const ResultsSection = ({
                       }}
                       config={{
                         responsive: true,
-                        displayModeBar: false
+                        displayModeBar: true,
+                        displaylogo: false
                       }}
                       style={{ width: '100%', height: '400px' }}
                     />
@@ -1092,7 +1104,7 @@ const ResultsSection = ({
 
           {/* Combined Transformer Current Plot */}
           <Grid item xs={12}>
-            <div className="plot-for-export" data-title="Transformer Currents" style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
               {results && results.trafo_current_from && results.trafo_current_from[0] && 
                results.trafo_current_to && results.trafo_current_to[0] ? (
                 <Plot
@@ -1126,7 +1138,8 @@ const ResultsSection = ({
                   }}
                   config={{
                     responsive: true,
-                    displayModeBar: false
+                    displayModeBar: true,
+                    displaylogo: false
                   }}
                   style={{ width: '100%', height: '500px' }}
                 />
@@ -1152,7 +1165,7 @@ const ResultsSection = ({
         <Grid container spacing={3}>
           {/* Eigenvalue Plot */}
           <Grid item xs={12} md={6}>
-            <div className="plot-for-export" data-title="System Eigenvalues" style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
               {results?.eigenvalues?.real && results.eigenvalues.real.length > 0 ? (
                 <Plot
                   data={[{
@@ -1216,7 +1229,7 @@ const ResultsSection = ({
           {/* Mode Shape Plots */}
           {results?.eigenvalues?.mode_shapes && results.eigenvalues.electromechanical_modes?.length > 0 && (
             <Grid item xs={12}>
-              <div className="plot-for-export" data-title="Electromechanical Mode Shapes" style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+              <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
                 <Typography variant="h6" gutterBottom>Electromechanical Mode Shapes</Typography>
                 <Grid container spacing={2}>
                   {/* Only plot unique modes (skip conjugate pairs) */}
@@ -1285,7 +1298,8 @@ const ResultsSection = ({
                           }}
                           config={{
                             responsive: true,
-                            displayModeBar: false
+                            displayModeBar: true,
+                            displaylogo: false
                           }}
                         />
                       </Grid>
@@ -1300,16 +1314,16 @@ const ResultsSection = ({
 
       {/* Power Injections Comparison Plot */}
       {results && results.bus_power_raw && busPower && busPower.length > 0 && (
-          <Paper sx={{ p: 3, mb: 3 }}>
-            <Typography variant="h6" gutterBottom>Power Injections Comparison (Initial vs Final)</Typography>
-            <PowerInjectionsPlot 
-              results={results}
-              busPower={busPower}
-              initialNetworkData={initialNetworkData}
-              defaultPlotLayout={defaultPlotLayout}
-            />
-          </Paper>
-        )}
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Typography variant="h6" gutterBottom>Power Injections Comparison (Initial vs Final)</Typography>
+          <PowerInjectionsPlot 
+            results={results}
+            busPower={busPower}
+            initialNetworkData={initialNetworkData}
+            defaultPlotLayout={defaultPlotLayout}
+          />
+        </Paper>
+      )}
 
       {/* Bus Power Injection Table */}
       {busPower && busPower.length > 0 && (

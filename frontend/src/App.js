@@ -7,6 +7,8 @@ import {
   Button,
   Box,
   Grid,
+  Select,
+  MenuItem
 } from '@mui/material';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -21,9 +23,7 @@ const ButtonPanel = ({
   saveParameters,
   handleStartSimulation,
   downloadExcel,
-  exportPlotsToPDF,
   loading,
-  exportingPdf,
   results,
   error,
   selectionMode,
@@ -61,22 +61,6 @@ const ButtonPanel = ({
           Download Excel
         </Button>
         <Button
-          variant="outlined"
-          color="secondary"
-          onClick={exportPlotsToPDF}
-          disabled={exportingPdf || !results}
-          size="large"
-        >
-          {exportingPdf ? (
-            <>
-              <CircularProgress size={24} sx={{ mr: 1 }} />
-              Generating PDF...
-            </>
-          ) : (
-            'Export Plots to PDF'
-          )}
-        </Button>
-        <Button
           variant={selectionMode ? "contained" : "outlined"}
           color={selectionMode ? "success" : "primary"}
           onClick={() => setSelectionMode(!selectionMode)}
@@ -89,12 +73,12 @@ const ButtonPanel = ({
             Monitoring: {monitoredComponents.length} component{monitoredComponents.length !== 1 ? 's' : ''}
           </Typography>
         )}
-        {error && (
-          <Typography color="error">
-            {error}
-          </Typography>
-        )}
       </>
+    )}
+    {error && (
+      <Typography color="error">
+        {error}
+      </Typography>
     )}
   </Box>
 );
@@ -248,19 +232,16 @@ const getPowerFlowInfo = (link, powerFlows) => {
 };
 
 // Helper function to determine line flow direction
-const getLineFlowDirectionSimple = (busPower, fromIdx, toIdx) => {
+function getLineFlowDirectionSimple(busPower, fromIdx, toIdx) {
   // Guard for missing data
   if (!busPower || !Array.isArray(busPower) || fromIdx === -1 || toIdx === -1) return 0;
 
-  const pFrom = busPower[fromIdx]?.p ?? 0;
-  const pTo = busPower[toIdx]?.p ?? 0;
+  // Find the index for Bus B8
+  const bus8Idx = initialNetworkData.nodes.findIndex(n => n.id === 'B8');
 
   // Helper: is this bus neutral?
   const isNeutral = (p) => Math.abs(p) < 1e-4;
   
-  // Find the index for Bus B8
-  const bus8Idx = initialNetworkData.nodes.findIndex(n => n.id === 'B8');
-
   // Helper function to find the deepest sink/weakest source using BFS
   function findDeepestSinkP(startIdx, excludeIdx) {
     const visited = new Set([excludeIdx]);
@@ -319,7 +300,17 @@ const getLineFlowDirectionSimple = (busPower, fromIdx, toIdx) => {
     return 0;
   };
 
-  // Main Logic:
+  // --- Main Logic --- 
+  
+  // Special Case: If B8 is involved, always use BFS
+  if (fromIdx === bus8Idx || toIdx === bus8Idx) {
+    return determineDirectionFromBFS();
+  }
+  
+  // --- Original Logic for non-B8 lines --- 
+  const pFrom = busPower[fromIdx]?.p ?? 0;
+  const pTo = busPower[toIdx]?.p ?? 0;
+
   // Case 1: Both are not neutral
   if (!isNeutral(pFrom) && !isNeutral(pTo)) {
     if (pFrom < pTo) return -1;
@@ -327,25 +318,17 @@ const getLineFlowDirectionSimple = (busPower, fromIdx, toIdx) => {
     return 0;
   }
 
-  // Case 2: One is neutral
+  // Case 2: One is neutral (and we know it's not B8 from the check above)
   if (isNeutral(pFrom) && !isNeutral(pTo)) {
-    if (fromIdx === bus8Idx) { // Special case: If B8 is the neutral one, use BFS
-      return determineDirectionFromBFS();
-    }
-    // Otherwise, use standard logic
     return pTo < 0 ? 1 : -1;
   }
   if (!isNeutral(pFrom) && isNeutral(pTo)) {
-    if (toIdx === bus8Idx) { // Special case: If B8 is the neutral one, use BFS
-      return determineDirectionFromBFS();
-    }
-    // Otherwise, use standard logic
     return pFrom < 0 ? -1 : 1;
   }
 
-  // Case 3: Both are neutral (already handled by BFS)
+  // Case 3: Both are neutral (and neither is B8)
   return determineDirectionFromBFS();
-};
+}
 
 function App() {
   const graphRef = useRef();
@@ -411,13 +394,9 @@ function App() {
     noiseParams: parameters.noiseParams,
     pllParams: parameters.pllParams
   });
-  const [exportingPdf, setExportingPdf] = useState(false);
-  // Add new state variable for power flows
   const [powerFlows, setPowerFlows] = useState({});
-  // Add a new state for busPower
   const [busPower, setBusPower] = useState(null);
   const [componentViewerOpen, setComponentViewerOpen] = useState(false);
-  // Add states for component selection
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedComponent, setSelectedComponent] = useState(null);
   const [monitoredComponents, setMonitoredComponents] = useState([]);
@@ -850,91 +829,6 @@ function App() {
     }));
   };
 
-  const exportPlotsToPDF = async () => {
-    if (!results || exportingPdf) return;
-
-    try {
-      setExportingPdf(true);
-
-      // Create PDF with landscape orientation for better plot display
-      const pdf = new jsPDF('landscape', 'mm', 'a4');
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const margin = 10;
-      
-      // Get all plots
-      const plotElements = document.querySelectorAll('.plot-for-export');
-      
-      // Wait a moment for plots to be fully rendered
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Convert each plot to canvas one at a time
-      for (let i = 0; i < plotElements.length; i++) {
-        const plot = plotElements[i];
-        
-        // Add a new page for each plot except the first one
-        if (i > 0) {
-          pdf.addPage();
-        }
-
-        try {
-          // Ensure the plot is visible in viewport for better rendering
-          plot.scrollIntoView({ behavior: 'auto', block: 'center' });
-          await new Promise(resolve => setTimeout(resolve, 500));
-
-          // Capture the plot
-          const canvas = await html2canvas(plot, {
-            scale: 2,
-            useCORS: true,
-            logging: false,
-            allowTaint: true,
-            backgroundColor: '#ffffff',
-            windowWidth: plot.scrollWidth,
-            windowHeight: plot.scrollHeight
-          });
-
-          // Get plot title
-          const title = plot.getAttribute('data-title') || `Plot ${i + 1}`;
-          
-          // Calculate dimensions to fit page while maintaining aspect ratio
-          const imageWidth = pageWidth - (2 * margin);
-          const imageHeight = (canvas.height * imageWidth) / canvas.width;
-          
-          // Add title
-          pdf.setFontSize(16);
-          pdf.text(title, margin, margin + 5);
-          
-          // Add plot image
-          const imgData = canvas.toDataURL('image/png', 1.0);
-          pdf.addImage(
-            imgData,
-            'PNG',
-            margin,
-            margin + 10,
-            imageWidth,
-            imageHeight,
-            undefined,
-            'FAST'
-          );
-
-        } catch (plotError) {
-          console.error(`Error processing plot ${i}:`, plotError);
-          // Continue with next plot instead of failing completely
-          continue;
-        }
-      }
-
-      // Save the PDF
-      pdf.save('simulation_results.pdf');
-
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-      alert('There was an error generating the PDF. Please try again.');
-    } finally {
-      setExportingPdf(false);
-    }
-  };
-
   // Update the useEffect that fetches simulation results
   useEffect(() => {
     if (simulationId) {
@@ -1221,9 +1115,7 @@ function App() {
           saveParameters={saveParameters}
           handleStartSimulation={handleStartSimulation}
           downloadExcel={downloadExcel}
-          exportPlotsToPDF={exportPlotsToPDF}
           loading={loading}
-          exportingPdf={exportingPdf}
           results={results}
           error={error}
           selectionMode={selectionMode}
@@ -1247,16 +1139,6 @@ function App() {
                 handleAddLineOutage={handleAddLineOutage}
                 handleRemoveTapChange={handleRemoveTapChange}
                 handleAddTapChange={handleAddTapChange}
-                saveParameters={saveParameters}
-                handleStartSimulation={handleStartSimulation}
-                downloadExcel={downloadExcel}
-                exportPlotsToPDF={exportPlotsToPDF}
-                loading={loading}
-                exportingPdf={exportingPdf}
-                results={results}
-                error={error}
-                componentViewerOpen={componentViewerOpen}
-                setComponentViewerOpen={setComponentViewerOpen}
               />
             </Grid>
           </Grid>

@@ -78,6 +78,12 @@ const PS_graph = ({
 
   const isNodeMonitored = (node) => monitoredComponents?.some(comp => comp.id === node.id);
   const isLinkMonitored = (link) => monitoredComponents?.some(comp => comp.id === link.id);
+  
+  // Get the bus ID selected for short circuit (ensure it's a string like 'B8')
+  let shortCircuitBusId = parameters.shortCircuit?.busId || null;
+  if (typeof shortCircuitBusId === 'number') {
+    shortCircuitBusId = `B${shortCircuitBusId}`;
+  }
 
   const processedLinks = networkData.links.map(link => {
     const fromId = typeof link.source === 'object' ? link.source.id : link.source;
@@ -211,38 +217,78 @@ const PS_graph = ({
             nodeCanvasObject={(node, ctx, globalScale) => {
               const isSelected = selectedNode && node.id === selectedNode.id;
               const isMonitored = isNodeMonitored(node);
+              // Ensure comparison is string vs string
+              const isShortCircuitBus = shortCircuitBusId && node.id === shortCircuitBusId;
               const radius = (selectionMode && node === hoveredNode && isSelectable(node)) || isSelected ? 14 : 10;
-
-              if (selectionMode && isSelectable(node)) {
-                ctx.beginPath();
-                ctx.arc(node.x, node.y, radius + 2, 0, 2 * Math.PI, false);
-                ctx.fillStyle = node === hoveredNode ? 'rgba(255, 0, 0, 0.2)' : 'rgba(0, 0, 0, 0.1)';
-                ctx.fill();
-              }
-
-              if (isMonitored) {
-                ctx.beginPath();
-                ctx.arc(node.x, node.y, radius + 5, 0, 2 * Math.PI, false);
-                ctx.strokeStyle = '#ff8800';
-                ctx.lineWidth = 4;
-                ctx.stroke();
-              }
-
-              ctx.beginPath();
-              ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
-              ctx.fillStyle = getNodeColor(node, busPower, selectionMode, node === hoveredNode, selectedComponent);
-              ctx.fill();
-              ctx.strokeStyle = selectionMode && node === hoveredNode && isSelectable(node) ? '#ff0000' : '#333';
-              ctx.lineWidth = selectionMode && node === hoveredNode && isSelectable(node) ? 2 : 1;
-              ctx.stroke();
-
-              const label = node.label;
               const fontSize = 16 / globalScale;
-              ctx.font = `${fontSize}px Arial`;
-              ctx.textAlign = 'center';
-              ctx.textBaseline = 'middle';
-              ctx.fillStyle = selectionMode && node === hoveredNode && isSelectable(node) ? '#cc0000' : '#222';
-              ctx.fillText(label, node.x, node.y);
+
+              // --- Debugging Logs --- 
+              if (node.id === 'B8') { // Log specifically for B8 or another bus you select
+                console.log(`Node: ${node.id}, Is SC Bus? ${isShortCircuitBus}, SC Bus ID Prop: ${shortCircuitBusId}`);
+              }
+              // --- End Debugging Logs ---
+
+              // Check if this is the short-circuited bus
+              if (isShortCircuitBus) {
+                // Draw Warning Triangle
+                const triangleHeight = radius * 1.7; // Adjust size as needed
+                const triangleBase = radius * 2;
+                ctx.beginPath();
+                ctx.moveTo(node.x, node.y - triangleHeight / 2);
+                ctx.lineTo(node.x - triangleBase / 2, node.y + triangleHeight / 2);
+                ctx.lineTo(node.x + triangleBase / 2, node.y + triangleHeight / 2);
+                ctx.closePath();
+
+                ctx.fillStyle = '#ffcc00'; // Yellow warning color
+                ctx.fill();
+                ctx.strokeStyle = '#cc0000'; // Red border
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Draw Exclamation Mark
+                ctx.font = `bold ${radius * 1.5 / globalScale}px Arial`; // Make it bold and larger
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#cc0000'; // Red exclamation mark
+                ctx.fillText('!', node.x, node.y + radius * 0.1 / globalScale); // Adjust vertical position slightly
+
+              } else {
+                // --- Draw Regular Node --- 
+                
+                // Highlight selectable nodes on hover
+                if (selectionMode && isSelectable(node) && node === hoveredNode) {
+                  ctx.beginPath();
+                  ctx.arc(node.x, node.y, radius + 2, 0, 2 * Math.PI, false);
+                  ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
+                  ctx.fill();
+                }
+                
+                // Draw orange outline for monitored nodes
+                if (isMonitored) {
+                  ctx.beginPath();
+                  ctx.arc(node.x, node.y, radius + 5, 0, 2 * Math.PI, false);
+                  ctx.strokeStyle = '#ff8800'; // Orange highlight
+                  ctx.lineWidth = 4;
+                  ctx.stroke();
+                }
+
+                // Draw the actual node circle
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
+                ctx.fillStyle = getNodeColor(node, busPower, selectionMode, node === hoveredNode, selectedComponent);
+                ctx.fill();
+                ctx.strokeStyle = selectionMode && node === hoveredNode && isSelectable(node) ? '#ff0000' : '#333';
+                ctx.lineWidth = selectionMode && node === hoveredNode && isSelectable(node) ? 2 : 1;
+                ctx.stroke();
+
+                // Draw the label
+                const label = node.label;
+                ctx.font = `${fontSize}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = selectionMode && node === hoveredNode && isSelectable(node) ? '#cc0000' : '#222';
+                ctx.fillText(label, node.x, node.y);
+              }
             }}
             linkColor={link => {
               if (isLinkMonitored(link)) return '#ff8800';

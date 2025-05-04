@@ -165,7 +165,7 @@ const FocusedComponentPlots = ({ results, monitoredComponents, initialNetworkDat
                             xaxis: { title: 'Time [s]' },
                             yaxis: { title: 'Speed [pu]' }
                           }}
-                          config={{ responsive: true, displayModeBar: false }}
+                          config={{ responsive: true, displayModeBar: true, displaylogo: false }}
                           style={{ width: '100%', height: '300px' }}
                         />
                       ) : (
@@ -215,7 +215,7 @@ const FocusedComponentPlots = ({ results, monitoredComponents, initialNetworkDat
                               side: 'right'
                             }
                           }}
-                          config={{ responsive: true, displayModeBar: false }}
+                          config={{ responsive: true, displayModeBar: true, displaylogo: false }}
                           style={{ width: '100%', height: '300px' }}
                         />
                       ) : (
@@ -259,7 +259,7 @@ const FocusedComponentPlots = ({ results, monitoredComponents, initialNetworkDat
                               side: 'right'
                             }
                           }}
-                          config={{ responsive: true, displayModeBar: false }}
+                          config={{ responsive: true, displayModeBar: true, displaylogo: false }}
                           style={{ width: '100%', height: '300px' }}
                         />
                       ) : (
@@ -352,7 +352,7 @@ const FocusedComponentPlots = ({ results, monitoredComponents, initialNetworkDat
                               side: 'right'
                             }
                           }}
-                          config={{ responsive: true, displayModeBar: false }}
+                          config={{ responsive: true, displayModeBar: true, displaylogo: false }}
                           style={{ width: '100%', height: '300px' }}
                         />
                       ) : (
@@ -388,7 +388,7 @@ const FocusedComponentPlots = ({ results, monitoredComponents, initialNetworkDat
                             xaxis: { title: 'Time [s]' },
                             yaxis: { title: 'Frequency [Hz]' }
                           }}
-                          config={{ responsive: true, displayModeBar: false }}
+                          config={{ responsive: true, displayModeBar: true, displaylogo: false }}
                           style={{ width: '100%', height: '300px' }}
                         />
                       </Grid>
@@ -475,7 +475,7 @@ const FocusedComponentPlots = ({ results, monitoredComponents, initialNetworkDat
                             xaxis: { title: 'Time [s]' },
                             yaxis: { title: 'Power [MW/MVAr]' }
                           }}
-                          config={{ responsive: true, displayModeBar: false }}
+                          config={{ responsive: true, displayModeBar: true, displaylogo: false }}
                           style={{ width: '100%', height: '300px' }}
                         />
                       ) : (
@@ -503,7 +503,7 @@ const FocusedComponentPlots = ({ results, monitoredComponents, initialNetworkDat
                             xaxis: { title: 'Time [s]' },
                             yaxis: { title: 'Current [A]' }
                           }}
-                          config={{ responsive: true, displayModeBar: false }}
+                          config={{ responsive: true, displayModeBar: true, displaylogo: false }}
                           style={{ width: '100%', height: '300px' }}
                         />
                       ) : (
@@ -531,7 +531,7 @@ const FocusedComponentPlots = ({ results, monitoredComponents, initialNetworkDat
                             xaxis: { title: 'Time [s]' },
                             yaxis: { title: 'Voltage [pu]' }
                           }}
-                          config={{ responsive: true, displayModeBar: false }}
+                          config={{ responsive: true, displayModeBar: true, displaylogo: false }}
                           style={{ width: '100%', height: '300px' }}
                         />
                       ) : (
@@ -621,7 +621,7 @@ const FocusedComponentPlots = ({ results, monitoredComponents, initialNetworkDat
                             xaxis: { title: 'Time [s]' },
                             yaxis: { title: 'Current [A]' }
                           }}
-                          config={{ responsive: true, displayModeBar: false }}
+                          config={{ responsive: true, displayModeBar: true, displaylogo: false }}
                           style={{ width: '100%', height: '300px' }}
                         />
                       ) : (
@@ -649,7 +649,7 @@ const FocusedComponentPlots = ({ results, monitoredComponents, initialNetworkDat
                             xaxis: { title: 'Time [s]' },
                             yaxis: { title: 'Voltage [pu]' }
                           }}
-                          config={{ responsive: true, displayModeBar: false }}
+                          config={{ responsive: true, displayModeBar: true, displaylogo: false }}
                           style={{ width: '100%', height: '300px' }}
                         />
                       ) : (
@@ -677,7 +677,7 @@ const FocusedComponentPlots = ({ results, monitoredComponents, initialNetworkDat
                             xaxis: { title: 'Time [s]' },
                             yaxis: { title: 'Voltage [pu]' }
                           }}
-                          config={{ responsive: true, displayModeBar: false }}
+                          config={{ responsive: true, displayModeBar: true, displaylogo: false }}
                           style={{ width: '100%', height: '300px' }}
                         />
                       ) : (
