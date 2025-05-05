@@ -20,19 +20,19 @@ import {
 } from '@mui/material';
 
 // Component for rendering a time slider with consistent styling
-const TimeSlider = ({ value, onChange, label }) => (
+const TimeSlider = ({ value, onChange, label, max }) => (
   <Box sx={{ mb: 3 }}>
     <Typography gutterBottom>{label || "Time (s)"}</Typography>
     <Slider
       value={value}
       onChange={onChange}
       min={0}
-      max={20}
+      max={max}
       step={0.1}
       marks={[
         { value: 0, label: '0s' },
-        { value: 10, label: '10s' },
-        { value: 20, label: '20s' }
+        { value: max / 2, label: `${(max / 2).toFixed(1)}s` },
+        { value: max, label: `${max.toFixed(1)}s` }
       ]}
       valueLabelDisplay="auto"
       sx={{ mb: 2 }}
@@ -83,6 +83,7 @@ const ParameterControls = ({
       <TimeSlider 
         value={parameters[`step${step}`].time}
         onChange={(_, value) => handleParameterChange(`step${step}`, 'time', value)}
+        max={parameters.t_end || 20}
       />
 
       {/* Power Parameters */}
@@ -169,6 +170,7 @@ const ParameterControls = ({
                 value={outage.time}
                 onChange={(_, value) => handleLineOutageChange(index, 'time', value)}
                 label="Disconnection Time (s)"
+                max={parameters.t_end || 20}
               />
 
               {/* Reconnection Toggle */}
@@ -188,6 +190,7 @@ const ParameterControls = ({
                   value={outage.reconnect.time}
                   onChange={(_, value) => handleReconnectChange(index, 'time', value)}
                   label="Reconnection Time (s)"
+                  max={parameters.t_end || 20}
                 />
               )}
 
@@ -244,6 +247,7 @@ const ParameterControls = ({
         value={parameters.shortCircuit.startTime}
         onChange={(_, value) => handleParameterChange('shortCircuit', 'startTime', value)}
         label="Start Time (s)"
+        max={parameters.t_end || 20}
       />
 
       {/* Duration and Admittance */}
@@ -310,6 +314,7 @@ const ParameterControls = ({
             <TimeSlider 
               value={change.time}
               onChange={(_, value) => handleTapChangerChange(index, 'time', value)}
+              max={parameters.t_end || 20}
             />
 
             {/* Ratio Change */}

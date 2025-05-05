@@ -632,14 +632,11 @@ const ResultsSection = ({
                       borderwidth: 2,
                       bordercolor: colors.text,
                       steps: [
-                        // Red zones
-                        { range: [49, 49.9], color: colors.danger },
-                        { range: [50.1, 51], color: colors.danger },
-                        // Orange zones
+                        { range: [tempMinFreq, 49.9], color: colors.danger },
                         { range: [49.9, 49.91], color: colors.warning },
+                        { range: [49.91, 50.09], color: colors.normal },
                         { range: [50.09, 50.1], color: colors.warning },
-                        // Green zone
-                        { range: [49.91, 50.09], color: colors.normal }
+                        { range: [50.1, tempMaxFreq], color: colors.danger }
                       ],
                       threshold: {
                         line: { color: colors.text, width: 4 },

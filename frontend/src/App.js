@@ -8,7 +8,8 @@ import {
   Box,
   Grid,
   Select,
-  MenuItem
+  MenuItem,
+  TextField
 } from '@mui/material';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -339,8 +340,10 @@ function App() {
         K_p: 100,
         K_i: 100
       }
-    }
+    },
+    t_end: 20
   });
+  const [tEndInput, setTEndInput] = useState('');
   const [loadChanges, setLoadChanges] = useState([]);
   const [simulationParams, setSimulationParams] = useState({
     t_end: 20,
@@ -357,6 +360,9 @@ function App() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedComponent, setSelectedComponent] = useState(null);
   const [monitoredComponents, setMonitoredComponents] = useState([]);
+
+  // Helper to display empty string if tEndInput is empty, otherwise the number
+  const tEndInputDisplay = tEndInput === undefined || tEndInput === null || tEndInput === '' ? '' : tEndInput;
 
   // Update network data when line outage parameters change
   useEffect(() => {
@@ -405,6 +411,15 @@ function App() {
   }, []);
 
   const handleParameterChange = (step, field, value) => {
+    if (step === 't_end') {
+      console.log('Updating t_end to:', value); // Add debug log
+      setParameters(prev => {
+        const newParams = { ...prev, t_end: value };
+        console.log('New parameters:', newParams); // Add debug log
+        return newParams;
+      });
+      return;
+    }
     setParameters(prev => ({
       ...prev,
       [step]: {
@@ -415,25 +430,32 @@ function App() {
   };
 
   const saveParameters = async () => {
-    try {
-      setError(null);
-      const response = await fetch(`${API_BASE_URL}/set_parameters`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(parameters)
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to save parameters');
-      }
-
-      const data = await response.json();
-      console.log('Parameters saved:', data);
-    } catch (err) {
-      setError('Failed to save parameters: ' + err.message);
-    }
+    // Use 20 if tEndInput is empty, otherwise use the entered value
+    const t_end_to_save = tEndInput === '' ? 20 : tEndInput;
+    setParameters(prev => {
+      const updated = { ...prev, t_end: t_end_to_save };
+      setTimeout(async () => {
+        try {
+          setError(null);
+          const response = await fetch(`${API_BASE_URL}/set_parameters`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(updated)
+          });
+          if (!response.ok) {
+            throw new Error('Failed to save parameters');
+          }
+          const data = await response.json();
+          console.log('Parameters saved:', data);
+        } catch (err) {
+          setError('Failed to save parameters: ' + err.message);
+        }
+      }, 0);
+      return updated;
+    });
+    return;
   };
 
   const downloadExcel = () => {
@@ -519,26 +541,14 @@ function App() {
   };
 
   const handleStartSimulation = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true);
-      setError(null);
-      
-      // Prepare simulation parameters
-      const simulationParamsToSend = {
-        ...parameters,  // Send all parameters directly
-        t_end: 20,
-        dt: 5e-3
-      };
-
-      console.log('Starting simulation with parameters:', simulationParamsToSend);
-
-      // Start the simulation
+      console.log('Starting simulation with parameters:', parameters); // Add debug log
       const response = await fetch(`${API_BASE_URL}/start_simulation`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(simulationParamsToSend),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(parameters)
       });
 
       const data = await response.json();
@@ -1067,19 +1077,103 @@ function App() {
           monitoredComponents={monitoredComponents}
         />
 
-        {/* Pass the required props to ButtonPanel */}
-        <ButtonPanel
-          saveParameters={saveParameters}
-          handleStartSimulation={handleStartSimulation}
-          downloadExcel={downloadExcel}
-          loading={loading}
-          results={results}
-          error={error}
-          selectionMode={selectionMode}
-          setSelectionMode={setSelectionMode}
-          selectedComponent={selectedComponent}
-          monitoredComponents={monitoredComponents}
-        />
+        {/* Row with t_end input and buttons */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, mt: -2, justifyContent: 'center' }}>
+          <ButtonPanel
+            saveParameters={saveParameters}
+            handleStartSimulation={handleStartSimulation}
+            downloadExcel={downloadExcel}
+            loading={loading}
+            results={results}
+            error={error}
+            selectionMode={selectionMode}
+            setSelectionMode={setSelectionMode}
+            selectedComponent={selectedComponent}
+            monitoredComponents={monitoredComponents}
+          />
+          <TextField
+            label=""
+            placeholder="Simulation time (s)"
+            type="number"
+            size="small"
+            value={tEndInputDisplay}
+            onChange={e => {
+              const value = e.target.value;
+              if (value === '') {
+                setTEndInput('');
+              } else {
+                const num = parseFloat(value);
+                if (!isNaN(num) && num >= 1) {
+                  setTEndInput(num);
+                }
+              }
+            }}
+            onBlur={() => {
+              // If left empty, reset to 20
+              if (tEndInput === '' || tEndInput === undefined || tEndInput === null) {
+                setTEndInput(20);
+              }
+            }}
+            InputProps={{
+              disableUnderline: true,
+              sx: {
+                height: 48,
+                minHeight: 48,
+                maxHeight: 48,
+                backgroundColor: '#1976d2',
+                color: '#fff',
+                borderRadius: '8px',
+                border: 'none',
+                fontWeight: 600,
+                fontSize: 16,
+                textAlign: 'center',
+                justifyContent: 'center',
+                pl: 2,
+                pr: 2,
+                boxShadow: 'none',
+                '& input': {
+                  textAlign: 'center',
+                  color: '#fff',
+                  fontWeight: 600,
+                  fontSize: 16,
+                  padding: 0,
+                },
+                '&::placeholder': {
+                  color: '#fff',
+                  opacity: 1,
+                },
+              },
+            }}
+            sx={{
+              width: 200,
+              height: 48,
+              minHeight: 48,
+              maxHeight: 48,
+              alignSelf: 'stretch',
+              m: 0,
+              p: 0,
+              borderRadius: '8px',
+              boxShadow: 'none',
+              border: 'none',
+              backgroundColor: '#1976d2',
+              color: '#fff',
+              fontWeight: 600,
+              fontSize: 16,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              '& .MuiOutlinedInput-notchedOutline': {
+                border: 'none',
+              },
+              '&:hover': {
+                backgroundColor: '#1565c0',
+              },
+              '& .Mui-focused': {
+                backgroundColor: '#1565c0',
+              },
+            }}
+          />
+        </Box>
 
         <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
           <Grid container spacing={3}>

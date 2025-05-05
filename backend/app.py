@@ -54,7 +54,8 @@ sim_parameters = {
     'step2': {'time': 2.0, 'load_index': 0, 'g_setp': 0, 'b_setp': 0},
     'lineOutage': {'lineId': '', 'time': 1.0},
     'shortCircuit': {'busId': '', 'startTime': 0, 'duration': 0, 'admittance': 0},
-    'tapChanger': {'enabled': True, 'changes': [{'transformerId': '', 'time': 0, 'ratioChange': 0}]}
+    'tapChanger': {'enabled': True, 'changes': [{'transformerId': '', 'time': 0, 'ratioChange': 0}]},
+    't_end': 20  # Add default t_end value
 }
 
 # Queue for real-time simulation updates to frontend
@@ -214,7 +215,7 @@ def run_simulation_thread(sim_params):
             ps.solve_algebraic, 
             0, 
             ps.x_0.copy(), 
-            t_end=20, 
+            t_end=sim_params.get('t_end', 20), 
             max_step=5e-3
         )
 
@@ -582,7 +583,13 @@ def set_parameters():
 
         # Update simulation parameters
         global sim_parameters
+        # Print received data for debugging
+        print("Received parameters update:", data)
+        if 't_end' in data:
+            print("Updating t_end to:", data['t_end'])
+        
         sim_parameters.update(data)
+        print("Updated sim_parameters:", sim_parameters)
         
         return jsonify({'status': 'success', 'parameters': sim_parameters})
     except Exception as e:
