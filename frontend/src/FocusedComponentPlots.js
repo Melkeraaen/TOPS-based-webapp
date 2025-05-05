@@ -12,7 +12,7 @@ import CloseIcon from '@mui/icons-material/Close';
 // Default plot layout
 const defaultPlotLayout = {
   height: 350,
-  margin: { t: 40, r: 40, l: 50, b: 40 },
+  margin: { t: 80, r: 120, l: 100, b: 100 },
   plot_bgcolor: '#ffffff',
   paper_bgcolor: '#ffffff',
   showlegend: true,
@@ -161,11 +161,11 @@ const FocusedComponentPlots = ({ results, monitoredComponents, initialNetworkDat
                           ]}
                           layout={{
                             ...defaultPlotLayout,
-                            title: 'Generator Speed',
-                            xaxis: { title: 'Time [s]' },
-                            yaxis: { title: 'Speed [pu]' }
+                            title: { text: 'Generator Speed' },
+                            xaxis: { title: { text: 't [s]' }, autorange: true },
+                            yaxis: { title: { text: 'ω [p.u.]' }, autorange: true }
                           }}
-                          config={{ responsive: true, displayModeBar: true, displaylogo: false }}
+                          config={{ responsive: true, displaylogo: false }}
                           style={{ width: '100%', height: '300px' }}
                         />
                       ) : (
@@ -204,18 +204,19 @@ const FocusedComponentPlots = ({ results, monitoredComponents, initialNetworkDat
                           ]}
                           layout={{
                             ...defaultPlotLayout,
-                            title: 'Generator Current',
-                            xaxis: { title: 'Time [s]' },
-                            yaxis: { title: 'Current Magnitude [A]' },
+                            title: { text: 'Generator Current' },
+                            xaxis: { title: { text: 't [s]' }, autorange: true },
+                            yaxis: { title: { text: 'I [A]' }, autorange: true },
                             yaxis2: {
-                              title: 'Current Angle [deg]',
+                              title: { text: 'θ [°]' },
                               titlefont: { color: '#f39c12' },
                               tickfont: { color: '#f39c12' },
                               overlaying: 'y',
-                              side: 'right'
+                              side: 'right',
+                              autorange: true
                             }
                           }}
-                          config={{ responsive: true, displayModeBar: true, displaylogo: false }}
+                          config={{ responsive: true, displaylogo: false }}
                           style={{ width: '100%', height: '300px' }}
                         />
                       ) : (
@@ -248,18 +249,19 @@ const FocusedComponentPlots = ({ results, monitoredComponents, initialNetworkDat
                           ]}
                           layout={{
                             ...defaultPlotLayout,
-                            title: `Terminal Voltage (${busId})`,
-                            xaxis: { title: 'Time [s]' },
-                            yaxis: { title: 'Voltage Magnitude [pu]' },
+                            title: { text: `Terminal Voltage (${busId})` },
+                            xaxis: { title: { text: 't [s]' }, autorange: true },
+                            yaxis: { title: { text: 'V [p.u.]' }, autorange: true },
                             yaxis2: {
-                              title: 'Voltage Angle [deg]',
+                              title: { text: 'θ [°]' },
                               titlefont: { color: '#9b59b6' },
                               tickfont: { color: '#9b59b6' },
                               overlaying: 'y',
-                              side: 'right'
+                              side: 'right',
+                              autorange: true
                             }
                           }}
-                          config={{ responsive: true, displayModeBar: true, displaylogo: false }}
+                          config={{ responsive: true, displaylogo: false }}
                           style={{ width: '100%', height: '300px' }}
                         />
                       ) : (
@@ -341,18 +343,19 @@ const FocusedComponentPlots = ({ results, monitoredComponents, initialNetworkDat
                           ]}
                           layout={{
                             ...defaultPlotLayout,
-                            title: 'Bus Voltage',
-                            xaxis: { title: 'Time [s]' },
-                            yaxis: { title: 'Voltage Magnitude [pu]' },
+                            title: { text: 'Bus Voltage' },
+                            xaxis: { title: { text: 't [s]' }, autorange: true },
+                            yaxis: { title: { text: 'V [p.u.]' }, autorange: true },
                             yaxis2: {
-                              title: 'Voltage Angle [deg]',
+                              title: { text: 'θ [°]' },
                               titlefont: { color: '#e67e22' },
                               tickfont: { color: '#e67e22' },
                               overlaying: 'y',
-                              side: 'right'
+                              side: 'right',
+                              autorange: true
                             }
                           }}
-                          config={{ responsive: true, displayModeBar: true, displaylogo: false }}
+                          config={{ responsive: true, displaylogo: false }}
                           style={{ width: '100%', height: '300px' }}
                         />
                       ) : (
@@ -384,11 +387,11 @@ const FocusedComponentPlots = ({ results, monitoredComponents, initialNetworkDat
                           ]}
                           layout={{
                             ...defaultPlotLayout,
-                            title: 'Bus PLL Frequency',
-                            xaxis: { title: 'Time [s]' },
-                            yaxis: { title: 'Frequency [Hz]' }
+                            title: { text: 'Bus PLL Frequency' },
+                            xaxis: { title: { text: 't [s]' }, autorange: true },
+                            yaxis: { title: { text: 'f [Hz]' }, autorange: true }
                           }}
-                          config={{ responsive: true, displayModeBar: true, displaylogo: false }}
+                          config={{ responsive: true, displaylogo: false }}
                           style={{ width: '100%', height: '300px' }}
                         />
                       </Grid>
@@ -471,11 +474,11 @@ const FocusedComponentPlots = ({ results, monitoredComponents, initialNetworkDat
                           ]}
                           layout={{
                             ...defaultPlotLayout,
-                            title: 'Load Power',
-                            xaxis: { title: 'Time [s]' },
-                            yaxis: { title: 'Power [MW/MVAr]' }
+                            title: { text: 'Load Power' },
+                            xaxis: { title: { text: 't [s]' }, autorange: true },
+                            yaxis: { title: { text: 'P/Q [MW/MVAr]' }, autorange: true }
                           }}
-                          config={{ responsive: true, displayModeBar: true, displaylogo: false }}
+                          config={{ responsive: true, displaylogo: false }}
                           style={{ width: '100%', height: '300px' }}
                         />
                       ) : (
@@ -499,11 +502,11 @@ const FocusedComponentPlots = ({ results, monitoredComponents, initialNetworkDat
                           ]}
                           layout={{
                             ...defaultPlotLayout,
-                            title: 'Load Current',
-                            xaxis: { title: 'Time [s]' },
-                            yaxis: { title: 'Current [A]' }
+                            title: { text: 'Load Current' },
+                            xaxis: { title: { text: 't [s]' }, autorange: true },
+                            yaxis: { title: { text: 'I [A]' }, autorange: true }
                           }}
-                          config={{ responsive: true, displayModeBar: true, displaylogo: false }}
+                          config={{ responsive: true, displaylogo: false }}
                           style={{ width: '100%', height: '300px' }}
                         />
                       ) : (
@@ -527,11 +530,11 @@ const FocusedComponentPlots = ({ results, monitoredComponents, initialNetworkDat
                           ]}
                           layout={{
                             ...defaultPlotLayout,
-                            title: `Connected Bus Voltage (${busId})`,
-                            xaxis: { title: 'Time [s]' },
-                            yaxis: { title: 'Voltage [pu]' }
+                            title: { text: `Connected Bus Voltage (${busId})` },
+                            xaxis: { title: { text: 't [s]' }, autorange: true },
+                            yaxis: { title: { text: 'V [p.u.]' }, autorange: true }
                           }}
-                          config={{ responsive: true, displayModeBar: true, displaylogo: false }}
+                          config={{ responsive: true, displaylogo: false }}
                           style={{ width: '100%', height: '300px' }}
                         />
                       ) : (
@@ -617,11 +620,11 @@ const FocusedComponentPlots = ({ results, monitoredComponents, initialNetworkDat
                           ]}
                           layout={{
                             ...defaultPlotLayout,
-                            title: 'Transformer Current',
-                            xaxis: { title: 'Time [s]' },
-                            yaxis: { title: 'Current [A]' }
+                            title: { text: 'Transformer Current' },
+                            xaxis: { title: { text: 't [s]' }, autorange: true },
+                            yaxis: { title: { text: 'I [A]' }, autorange: true }
                           }}
-                          config={{ responsive: true, displayModeBar: true, displaylogo: false }}
+                          config={{ responsive: true, displaylogo: false }}
                           style={{ width: '100%', height: '300px' }}
                         />
                       ) : (
@@ -645,11 +648,11 @@ const FocusedComponentPlots = ({ results, monitoredComponents, initialNetworkDat
                           ]}
                           layout={{
                             ...defaultPlotLayout,
-                            title: `Input Bus Voltage (${busMapping.input})`,
-                            xaxis: { title: 'Time [s]' },
-                            yaxis: { title: 'Voltage [pu]' }
+                            title: { text: `Input Bus Voltage (${busMapping.input})` },
+                            xaxis: { title: { text: 't [s]' }, autorange: true },
+                            yaxis: { title: { text: 'V [p.u.]' }, autorange: true }
                           }}
-                          config={{ responsive: true, displayModeBar: true, displaylogo: false }}
+                          config={{ responsive: true, displaylogo: false }}
                           style={{ width: '100%', height: '300px' }}
                         />
                       ) : (
@@ -673,11 +676,11 @@ const FocusedComponentPlots = ({ results, monitoredComponents, initialNetworkDat
                           ]}
                           layout={{
                             ...defaultPlotLayout,
-                            title: `Output Bus Voltage (${busMapping.output})`,
-                            xaxis: { title: 'Time [s]' },
-                            yaxis: { title: 'Voltage [pu]' }
+                            title: { text: `Output Bus Voltage (${busMapping.output})` },
+                            xaxis: { title: { text: 't [s]' }, autorange: true },
+                            yaxis: { title: { text: 'V [p.u.]' }, autorange: true }
                           }}
-                          config={{ responsive: true, displayModeBar: true, displaylogo: false }}
+                          config={{ responsive: true, displaylogo: false }}
                           style={{ width: '100%', height: '300px' }}
                         />
                       ) : (

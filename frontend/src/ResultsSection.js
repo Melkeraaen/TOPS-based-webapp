@@ -11,7 +11,12 @@ import {
   TableRow,
   Box,
   Select,
-  MenuItem
+  MenuItem,
+  Checkbox,
+  ListItemText,
+  OutlinedInput,
+  FormControl,
+  InputLabel
 } from '@mui/material';
 import Plot from 'react-plotly.js';
 import FocusedComponentPlots from './FocusedComponentPlots';
@@ -20,7 +25,7 @@ import FocusedComponentPlots from './FocusedComponentPlots';
 // Default plot layout configuration
 const defaultPlotLayout = {
   height: 400,
-  margin: { t: 50, r: 50, l: 50, b: 50 },
+  margin: { t: 80, r: 120, l: 100, b: 100 },
   plot_bgcolor: '#ffffff',
   paper_bgcolor: '#ffffff',
   showlegend: true,
@@ -160,13 +165,16 @@ const PowerInjectionsPlot = ({
   initialNetworkData,
   defaultPlotLayout
 }) => {
-  const [selectedBus, setSelectedBus] = React.useState('all');
-  const [plotKey, setPlotKey] = React.useState(0); // Key for forcing re-render with transitions
+  const [selectedBuses, setSelectedBuses] = React.useState([]); 
+  const [plotKey, setPlotKey] = React.useState(0);
   
-  // Handle bus selection change
   const handleBusChange = (event) => {
-    setSelectedBus(event.target.value);
-    setPlotKey(prevKey => prevKey + 1); // Change key to force re-render with animation
+    const { target: { value } } = event;
+    setSelectedBuses(
+      // On autofill we get a stringified value.
+      typeof value === 'string' ? value.split(',') : value,
+    );
+    setPlotKey(prevKey => prevKey + 1);
   };
   
   // Parse raw power injections strings into complex numbers
@@ -202,9 +210,9 @@ const PowerInjectionsPlot = ({
   ).slice(0, 11);
   
   // Filter bus nodes based on selection
-  const filteredBusNodes = selectedBus === 'all' 
-    ? busNodes 
-    : busNodes.filter(node => node.id === selectedBus);
+  const filteredBusNodes = selectedBuses.length > 0 ? 
+    busNodes.filter(node => selectedBuses.includes(node.id))
+    : busNodes;
     
   // Create arrows connecting initial to final positions
   const arrowData = filteredBusNodes.map((node) => {
@@ -252,7 +260,7 @@ const PowerInjectionsPlot = ({
         }
       },
       text: node.id,
-      hovertemplate: '%{text} (Initial): %{x:.3f} + %{y:.3f}j<extra></extra>'
+      hovertemplate: '%{text} (Initial): %{x:.2f} + %{y:.2f}j<extra></extra>'
     };
   }).filter(Boolean);
 
@@ -275,7 +283,7 @@ const PowerInjectionsPlot = ({
         color: busColors[originalIndex % busColors.length]
       },
       text: node.id,
-      hovertemplate: '%{text} (Final): %{x:.3f} + %{y:.3f}j<extra></extra>'
+      hovertemplate: '%{text} (Final): %{x:.2f} + %{y:.2f}j<extra></extra>'
     };
   }).filter(Boolean);
 
@@ -310,7 +318,7 @@ const PowerInjectionsPlot = ({
   // Configure axis ranges
   let axisConfig = {};
   
-  if (selectedBus === 'all') {
+  if (selectedBuses.length === 0) { // Show all buses if selection is empty
     // Calculate symmetric axes for all buses view
     const allX = [
       ...initialData.map(d => d.x[0] || 0),
@@ -330,26 +338,14 @@ const PowerInjectionsPlot = ({
     const axisMax = Math.max(Math.abs(xMin), Math.abs(xMax), Math.abs(yMin), Math.abs(yMax)) * 1.1;
     
     axisConfig = {
-      xaxis: { 
-        autorange: false,
-        range: [-axisMax, axisMax]
-      },
-      yaxis: { 
-        autorange: false,
-        range: [-axisMax, axisMax],
-        scaleanchor: 'x',
-        scaleratio: 1
-      }
+      xaxis: { autorange: false, range: [-axisMax, axisMax] },
+      yaxis: { autorange: false, range: [-axisMax, axisMax], scaleanchor: 'x', scaleratio: 1 }
     };
   } else {
-    // For single bus view, use autorange with padding
+    // For selected bus(es) view, use autorange
     axisConfig = {
-      xaxis: { 
-        autorange: true
-      },
-      yaxis: { 
-        autorange: true
-      }
+      xaxis: { autorange: true },
+      yaxis: { autorange: true }
     };
   }
 
@@ -357,36 +353,40 @@ const PowerInjectionsPlot = ({
     <>
       <Box sx={{ mb: 2, display: 'flex', alignItems: 'center' }}>
         <Typography variant="body1" sx={{ mr: 2 }}>
-          Select Bus:
+          Select Bus(es):
         </Typography>
-        <Select
-          value={selectedBus}
-          onChange={handleBusChange}
-          size="small"
-          sx={{ minWidth: 120 }}
-        >
-          <MenuItem value="all">All Buses</MenuItem>
-          {busNodes.map(node => (
-            <MenuItem key={node.id} value={node.id}>
-              <Box sx={{ 
-                display: 'flex', 
-                alignItems: 'center',
-                gap: 1
-              }}>
+        <FormControl sx={{ minWidth: 150, maxWidth: 300 }} size="small">
+          <InputLabel>Buses</InputLabel>
+          <Select
+            multiple
+            value={selectedBuses}
+            onChange={handleBusChange}
+            input={<OutlinedInput label="Buses" />}
+            renderValue={(selected) => selected.join(', ')}
+          >
+            {busNodes.map(node => (
+              <MenuItem key={node.id} value={node.id}>
+                <Checkbox checked={selectedBuses.indexOf(node.id) > -1} />
                 <Box sx={{ 
-                  width: 12, 
-                  height: 12, 
-                  borderRadius: '50%', 
-                  bgcolor: busColors[busNodes.findIndex(n => n.id === node.id)] 
-                }}/>
-                {node.id}
-              </Box>
-            </MenuItem>
-          ))}
-        </Select>
+                  display: 'flex', 
+                  alignItems: 'center',
+                  gap: 1
+                }}>
+                  <Box sx={{ 
+                    width: 12, 
+                    height: 12, 
+                    borderRadius: '50%', 
+                    bgcolor: busColors[busNodes.findIndex(n => n.id === node.id)] 
+                  }}/>
+                  <ListItemText primary={node.id} />
+                </Box>
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
       </Box>
     
-      <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+      <div className="plot-for-export" data-title="Power Injections Comparison" style={{ backgroundColor: '#ffffff', padding: '10px' }}>
         <Plot
           key={plotKey}
           data={[
@@ -398,14 +398,14 @@ const PowerInjectionsPlot = ({
           layout={{
             ...defaultPlotLayout,
             title: {
-              text: selectedBus === 'all' 
-                ? 'Power Injections in Complex Plane' 
-                : `Power Injection for ${selectedBus}`,
+              text: selectedBuses.length === 0 
+                ? 'Power Injections in Complex Plane (All Buses)' 
+                : `Power Injection for ${selectedBuses.join(', ')}`,
               font: { size: 24 },
               y: 0.95
             },
             xaxis: { 
-              title: 'Real Power (MW)',
+              title: { text: 'P [MW]' },
               zeroline: true,
               zerolinecolor: '#000000',
               zerolinewidth: 1,
@@ -413,11 +413,13 @@ const PowerInjectionsPlot = ({
               ...axisConfig.xaxis
             },
             yaxis: { 
-              title: 'Reactive Power (MVAr)',
+              title: { text: 'Q [MVAr]' },
               zeroline: true,
               zerolinecolor: '#000000',
               zerolinewidth: 1,
               gridcolor: '#e0e0e0',
+              scaleanchor: selectedBuses.length === 0 ? 'x' : undefined,
+              scaleratio: selectedBuses.length === 0 ? 1 : undefined,
               ...axisConfig.yaxis
             },
             height: 600,
@@ -454,6 +456,9 @@ const ResultsSection = ({
   monitoredComponents,
   onRemoveComponent
 }) => {
+  const [islandFrequencyTimeSeries, setIslandFrequencyTimeSeries] = React.useState(null);
+  const [islandInfo, setIslandInfo] = React.useState([]); // To store island details for legend/labels
+
   // Add logging effect at top level
   React.useEffect(() => {
     if (results?.gen_speed && results.gen_speed[0]) {
@@ -474,6 +479,44 @@ const ResultsSection = ({
     }
   }, [results?.gen_speed, parameters?.lineOutage, initialNetworkData]);
 
+  // Effect to calculate island frequency time series
+  React.useEffect(() => {
+    if (results?.gen_speed && Array.isArray(results.gen_speed) && results.gen_speed.length > 0 && initialNetworkData) {
+      const islands = detectIslands(initialNetworkData, parameters.lineOutage || null);
+      const genMapping = mapGeneratorsToIslands(islands, initialNetworkData);
+      
+      const timeSeries = islands.map(() => []); // Initialize an array for each island
+      
+      results.gen_speed.forEach(speedsAtTimeT => {
+        if (!Array.isArray(speedsAtTimeT)) return; // Skip if data for this timestep is invalid
+        
+        const frequenciesAtTimeT = calculateIslandFrequencies(islands, genMapping, speedsAtTimeT);
+        
+        frequenciesAtTimeT.forEach((freq, islandIndex) => {
+          if (timeSeries[islandIndex]) { // Ensure the island index is valid
+             timeSeries[islandIndex].push(freq);
+          }
+        });
+      });
+      
+      setIslandFrequencyTimeSeries(timeSeries);
+      
+      // Store island info for labels
+      setIslandInfo(islands.map((island, idx) => ({
+        id: idx + 1,
+        buses: Array.from(island),
+        generators: Object.entries(genMapping)
+          .filter(([_, islandId]) => islandId === idx)
+          .map(([genId]) => `G${parseInt(genId) + 1}`)
+      })));
+      
+    } else {
+      // Reset if results are not available
+      setIslandFrequencyTimeSeries(null);
+      setIslandInfo([]);
+    }
+  }, [results?.gen_speed, initialNetworkData, parameters.lineOutage]);
+
   if (!results) return null;
 
   return (
@@ -489,6 +532,7 @@ const ResultsSection = ({
         />
       )}
 
+      {/* Real-Time Simulation Results Section */}
       <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="h5" gutterBottom sx={{ 
           borderBottom: '2px solid #e0e0e0', 
@@ -499,361 +543,10 @@ const ResultsSection = ({
           Real-Time Simulation Results
         </Typography>
         <Grid container spacing={3}>
-          {/* Bus Voltage Plot */}
-          <Grid item xs={12} md={6}>
-            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
-              {results && results.v && results.v[0] ? (
-                <Plot
-                  data={results.v[0].map((_, idx) => ({
-                    x: results.t,
-                    y: results.v.map(v => {
-                      const value = v[idx];
-                      return typeof value === 'object' ? Math.sqrt(value.real**2 + value.imag**2) : Math.abs(value);
-                    }),
-                    type: 'scatter',
-                    mode: 'lines',
-                    name: `Bus ${idx + 1}`,
-                    line: { simplify: true }
-                  }))}
-                  layout={{
-                    ...defaultPlotLayout,
-                    title: {
-                      text: 'Bus Voltages',
-                      font: { size: 24 },
-                      y: 0.95
-                    },
-                    xaxis: { title: 'Time [s]' },
-                    yaxis: { title: 'Voltage [pu]' },
-                  }}
-                  config={{
-                    responsive: true,
-                    displayModeBar: true,
-                    displaylogo: false
-                  }}
-                  style={{ width: '100%', height: '400px' }}
-                />
-              ) : (
-                <div>No voltage data available</div>
-              )}
-            </div>
-          </Grid>
 
-          {/* Voltage Angle Time Plot */}
-          <Grid item xs={12} md={6}>
-            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
-              {results?.v_angle && Array.isArray(results.v_angle) && results.v_angle.length > 0 && Array.isArray(results.v_angle[0]) ? (
-                <Plot
-                  data={results.v_angle[0].map((_, busIdx) => ({
-                    type: 'scatter',
-                    mode: 'lines',
-                    name: `Bus ${busIdx + 1}`,
-                    x: results.t,
-                    y: results.v_angle.map(angles => angles[busIdx]),
-                    line: { 
-                      color: [
-                        '#e41a1c',  // red
-                        '#377eb8',  // blue
-                        '#4daf4a',  // green
-                        '#984ea3',  // purple
-                        '#ff7f00',  // orange
-                        '#a65628',  // brown
-                        '#f781bf',  // pink
-                        '#999999'   // grey
-                      ][busIdx % 8],
-                      width: 2
-                    }
-                  }))}
-                  layout={{
-                    ...defaultPlotLayout,
-                    title: {
-                      text: 'Bus Voltage Angles',
-                      font: { size: 24 },
-                      y: 0.95
-                    },
-                    xaxis: { title: 'Time [s]' },
-                    yaxis: { title: 'Angle [degrees]' },
-                    showlegend: true,
-                    legend: {
-                      x: 1.1,
-                      y: 1
-                    },
-                    margin: { t: 50, r: 100, b: 50, l: 50 }
-                  }}
-                  config={{
-                    responsive: true,
-                    displayModeBar: true,
-                    displaylogo: false
-                  }}
-                  style={{ width: '100%', height: '400px' }}
-                />
-              ) : (
-                <div>No voltage angle data available</div>
-              )}
-            </div>
-          </Grid>
+          {/* === NEW ORDERING STARTS HERE === */}
 
-          {/* Voltage Phasor Plot */}
-          <Grid item xs={12} md={6}>
-            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
-              {results?.v && results.v[0] ? (
-                <Plot
-                  data={results.v[0].map((_, busIdx) => {
-                    const lastIdx = results.v.length - 1;
-                    const magnitude = getMagnitude(results.v[lastIdx][busIdx], true);
-                    const angle = Math.atan2(
-                      results.v[lastIdx][busIdx].imag,
-                      results.v[lastIdx][busIdx].real
-                    );  // Keep in radians like TOPS
-                    return {
-                      type: 'scatterpolar',
-                      mode: 'lines+markers',
-                      name: `Bus ${busIdx + 1}`,
-                      r: [0, magnitude],
-                      theta: [0, angle * 180 / Math.PI],  // Convert to degrees for plotly
-                      marker: { size: 8 },
-                      line: { 
-                        color: [
-                          '#e41a1c',  // red
-                          '#377eb8',  // blue
-                          '#4daf4a',  // green
-                          '#984ea3',  // purple
-                          '#ff7f00',  // orange
-                          '#a65628',  // brown
-                          '#f781bf',  // pink
-                          '#999999'   // grey
-                        ][busIdx % 8],
-                        width: 2
-                      }
-                    };
-                  })}
-                  layout={{
-                    ...defaultPlotLayout,
-                    title: {
-                      text: 'Bus Voltage Phasors',
-                      font: { size: 24 },
-                      y: 0.95
-                    },
-                    showlegend: true,
-                    legend: {
-                      x: 1.1,
-                      y: 1
-                    },
-                    polar: {
-                      radialaxis: {
-                        showticklabels: true,
-                        ticks: '',
-                        range: [0, Math.max(...results.v.map(v => Math.max(...v.map(val => getMagnitude(val, true))))) * 1.1],
-                        title: 'Voltage [p.u.]',
-                        gridcolor: '#e0e0e0'
-                      },
-                      angularaxis: {
-                        tickmode: 'array',
-                        tickvals: [-180, -90, 0, 90, 180],
-                        ticktext: ['180°', '270°', '0°', '90°', '180°'],
-                        direction: 'clockwise',
-                        period: 360,
-                        gridcolor: '#e0e0e0'
-                      },
-                      bgcolor: '#ffffff'
-                    },
-                    width: 500,
-                    height: 500,
-                    margin: { t: 50, r: 100, b: 50, l: 50 }
-                  }}
-                  config={{
-                    responsive: true,
-                    displayModeBar: true,
-                    displaylogo: false
-                  }}
-                  useResizeHandler={true}
-                  style={{ width: '100%', height: '400px' }}
-                />
-              ) : (
-                <div>No voltage phasor data available</div>
-              )}
-            </div>
-          </Grid>
-
-          {/* Generator Current Plot */}
-          <Grid item xs={12} md={6}>
-            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
-              {results && results.gen_I && results.gen_I[0] ? (
-                <Plot
-                  data={results.gen_I[0].map((_, idx) => ({
-                    x: results.t,
-                    y: results.gen_I.map(i => getMagnitude(i[idx], true)),
-                    type: 'scatter',
-                    mode: 'lines',
-                    name: `Generator current ${idx + 1}`
-                  }))}
-                  layout={{
-                    ...defaultPlotLayout,
-                    title: {
-                      text: 'Generator Current',
-                      font: { size: 24 },
-                      y: 0.95
-                    },
-                    xaxis: { title: 'Time [s]' },
-                    yaxis: { title: 'Generator current [A]' },
-                  }}
-                  config={{
-                    responsive: true,
-                    displayModeBar: true,
-                    displaylogo: false
-                  }}
-                  style={{ width: '100%', height: '400px' }}
-                />
-              ) : (
-                <div>No generator current data available</div>
-              )}
-            </div>
-          </Grid>
-
-          {/* Load Current Plot */}
-          <Grid item xs={12} md={6}>
-            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
-              {results && results.load_I && results.load_I[0] ? (
-                <Plot
-                  data={results.load_I[0].map((_, idx) => ({
-                    x: results.t,
-                    y: results.load_I.map(i => getMagnitude(i[idx], true)),
-                    type: 'scatter',
-                    mode: 'lines',
-                    name: `Load current ${idx + 1}`
-                  }))}
-                  layout={{
-                    ...defaultPlotLayout,
-                    title: {
-                      text: 'Load Current',
-                      font: { size: 24 },
-                      y: 0.95
-                    },
-                    xaxis: { title: 'Time [s]' },
-                    yaxis: { title: 'Load current [A]' },
-                  }}
-                  config={{
-                    responsive: true,
-                    displayModeBar: true,
-                    displaylogo: false
-                  }}
-                  style={{ width: '100%', height: '400px' }}
-                />
-              ) : (
-                <div>No load current data available</div>
-              )}
-            </div>
-          </Grid>
-
-          {/* Active Power Plot */}
-          <Grid item xs={12} md={6}>
-            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
-              {results && results.load_P && results.load_P[0] ? (
-                <Plot
-                  data={results.load_P[0].map((_, idx) => ({
-                    x: results.t,
-                    y: results.load_P.map(p => getMagnitude(p[idx], false)),
-                    type: 'scatter',
-                    mode: 'lines',
-                    name: `Load ${idx + 1}`,
-                    line: { simplify: true }
-                  }))}
-                  layout={{
-                    ...defaultPlotLayout,
-                    title: {
-                      text: 'Load Active Power',
-                      font: { size: 24 },
-                      y: 0.95
-                    },
-                    xaxis: { title: 'Time [s]' },
-                    yaxis: { title: 'Active Power [MW]' },
-                  }}
-                  config={{
-                    responsive: true,
-                    displayModeBar: true,
-                    displaylogo: false
-                  }}
-                  style={{ width: '100%', height: '400px' }}
-                />
-              ) : (
-                <div>No active power data available</div>
-              )}
-            </div>
-          </Grid>
-
-          {/* Reactive Power Plot */}
-          <Grid item xs={12} md={6}>
-            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
-              {results && results.load_Q && results.load_Q[0] ? (
-                <Plot
-                  data={results.load_Q[0].map((_, idx) => ({
-                    x: results.t,
-                    y: results.load_Q.map(q => getMagnitude(q[idx], false)),
-                    type: 'scatter',
-                    mode: 'lines',
-                    name: `Reactive power ${idx + 1}`
-                  }))}
-                  layout={{
-                    ...defaultPlotLayout,
-                    title: {
-                      text: 'Load Reactive Power',
-                      font: { size: 24 },
-                      y: 0.95
-                    },
-                    xaxis: { title: 'Time [s]' },
-                    yaxis: { title: 'MVAr' },
-                  }}
-                  config={{
-                    responsive: true,
-                    displayModeBar: true,
-                    displaylogo: false
-                  }}
-                  style={{ width: '100%', height: '400px' }}
-                />
-              ) : (
-                <div>No reactive power data available</div>
-              )}
-            </div>
-          </Grid>
-
-          {/* Generator Speed Plot */}
-          <Grid item xs={12} md={6}>
-            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
-              {results?.gen_speed && results.gen_speed[0] ? (
-                <Plot
-                  data={[
-                    ...results.gen_speed[0].map((_, idx) => ({
-                      x: results.t,
-                      y: results.gen_speed.map(speeds => speeds[idx]),
-                      type: 'scatter',
-                      mode: 'lines',
-                      name: `Generator ${idx + 1}`,
-                      line: { simplify: true }
-                    }))
-                  ]}
-                  layout={{
-                    ...defaultPlotLayout,
-                    title: {
-                      text: 'Generator Speeds',
-                      font: { size: 24 },
-                      y: 0.95
-                    },
-                    xaxis: { title: 'Time [s]' },
-                    yaxis: { title: 'Speed [pu]' }
-                  }}
-                  config={{
-                    responsive: true,
-                    displayModeBar: true,
-                    displaylogo: false
-                  }}
-                  style={{ width: '100%', height: '400px' }}
-                />
-              ) : (
-                <div>No generator speed data available</div>
-              )}
-            </div>
-          </Grid>
-
-          {/* Frequency Gauge Plot */}
+          {/* 1. Frequency Gauge Plot */}
           <Grid item xs={12} md={6}>
             <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
               {results?.gen_speed && results.gen_speed[0] ? (() => {
@@ -899,6 +592,15 @@ const ResultsSection = ({
                   }
                 });
 
+                // Calculate maxAbsDev for symmetric scaling around 50 Hz
+                let maxAbsDev = 0.2;
+                if (results?.gen_speed && Array.isArray(results.gen_speed)) {
+                  const allFreqs = results.gen_speed.flat().map(s => 50 * (1 + s));
+                  maxAbsDev = Math.max(0.2, ...allFreqs.map(f => Math.abs(f - 50)));
+                }
+                const tempMinFreq = 50 - maxAbsDev;
+                const tempMaxFreq = 50 + maxAbsDev;
+
                 // Create gauge traces
                 const gaugeTraces = frequencies.map((freq, idx) => {
                   // Get list of generators for this island
@@ -917,11 +619,12 @@ const ResultsSection = ({
                     },
                     gauge: {
                       axis: {
-                        range: [49, 51],
+                        range: [tempMinFreq, tempMaxFreq],
                         tickwidth: 2,
                         tickcolor: colors.text,
-                        tickmode: 'linear',
-                        dtick: 0.2,
+                        tickmode: 'array',
+                        tickvals: [tempMinFreq, 49.9, 50, 50.1, tempMaxFreq],
+                        ticktext: [tempMinFreq.toFixed(1), '49.9', '50.0', '50.1', tempMaxFreq.toFixed(1)],
                         tickfont: { size: 12 }
                       },
                       bar: { color: colors.text },
@@ -930,13 +633,13 @@ const ResultsSection = ({
                       bordercolor: colors.text,
                       steps: [
                         // Red zones
-                        { range: [49, 49.8], color: colors.danger },
-                        { range: [50.2, 51], color: colors.danger },
+                        { range: [49, 49.9], color: colors.danger },
+                        { range: [50.1, 51], color: colors.danger },
                         // Orange zones
-                        { range: [49.8, 49.9], color: colors.warning },
-                        { range: [50.1, 50.2], color: colors.warning },
+                        { range: [49.9, 49.91], color: colors.warning },
+                        { range: [50.09, 50.1], color: colors.warning },
                         // Green zone
-                        { range: [49.9, 50.1], color: colors.normal }
+                        { range: [49.91, 50.09], color: colors.normal }
                       ],
                       threshold: {
                         line: { color: colors.text, width: 4 },
@@ -986,11 +689,455 @@ const ResultsSection = ({
               )}
             </div>
           </Grid>
+          
+          {/* 2. Frequency Over Time Plot */}
+          <Grid item xs={12} md={6}>
+            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+              {islandFrequencyTimeSeries && islandFrequencyTimeSeries.length > 0 ? (
+                <Plot
+                  data={islandFrequencyTimeSeries.map((freqData, index) => ({
+                    x: results.t,
+                    y: freqData,
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: `Island ${islandInfo[index]?.id || index + 1}` + 
+                          (islandInfo[index]?.generators.length > 0 ? ` (Gens: ${islandInfo[index].generators.join(', ')})` : ''),
+                    line: { width: 2 }
+                  }))}
+                  layout={{
+                    ...defaultPlotLayout,
+                    title: {
+                      text: 'System Frequency Over Time',
+                      font: { size: 24 },
+                      y: 0.95
+                    },
+                    xaxis: { ...defaultPlotLayout.xaxis, title: { text: 't [s]' }, autorange: true },
+                    yaxis: { ...defaultPlotLayout.yaxis, title: { text: 'f [Hz]' }, range: [49, 51] }, // Set a typical range
+                    showlegend: true,
+                    legend: { x: 1.05, y: 1 }
+                  }}
+                  config={{
+                    responsive: true,
+                    displayModeBar: true,
+                    displaylogo: false
+                  }}
+                  style={{ width: '100%', height: '400px' }}
+                />
+              ) : (
+                results && <Typography>Calculating frequency data...</Typography> // Show message while calculating
+              )}
+            </div>
+          </Grid>
+          
+          {/* 3. Bus Voltage (Magnitude) Plot */}
+          <Grid item xs={12} md={6}>
+            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+              {results && results.v && results.v[0] ? (
+                <Plot
+                  data={results.v[0].map((_, idx) => ({
+                    x: results.t,
+                    y: results.v.map(v => {
+                      const value = v[idx];
+                      return typeof value === 'object' ? Math.sqrt(value.real**2 + value.imag**2) : Math.abs(value);
+                    }),
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: `Bus ${idx + 1}`,
+                    line: { simplify: true }
+                  }))}
+                  layout={{
+                    ...defaultPlotLayout,
+                    title: {
+                      text: 'Bus Voltages',
+                      font: { size: 24 },
+                      y: 0.95
+                    },
+                    xaxis: { ...defaultPlotLayout.xaxis, title: { text: 't [s]' }, autorange: true },
+                    yaxis: { ...defaultPlotLayout.yaxis, title: { text: 'V [p.u.]' }, autorange: true },
+                  }}
+                  config={{
+                    responsive: true,
+                    displayModeBar: true,
+                    displaylogo: false
+                  }}
+                  style={{ width: '100%', height: '400px' }}
+                />
+              ) : (
+                <div>No voltage data available</div>
+              )}
+            </div>
+          </Grid>
 
-          {/* PLL Plots */}
+          {/* 4. Bus Voltage Angles Plot */}
+          <Grid item xs={12} md={6}>
+            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+              {results?.v_angle && Array.isArray(results.v_angle) && results.v_angle.length > 0 && Array.isArray(results.v_angle[0]) ? (
+                <Plot
+                  data={results.v_angle[0].map((_, busIdx) => ({
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: `Bus ${busIdx + 1}`,
+                    x: results.t,
+                    y: results.v_angle.map(angles => angles[busIdx]),
+                    line: { 
+                      color: [
+                        '#e41a1c',  // red
+                        '#377eb8',  // blue
+                        '#4daf4a',  // green
+                        '#984ea3',  // purple
+                        '#ff7f00',  // orange
+                        '#a65628',  // brown
+                        '#f781bf',  // pink
+                        '#999999'   // grey
+                      ][busIdx % 8],
+                      width: 2
+                    }
+                  }))}
+                  layout={{
+                    ...defaultPlotLayout,
+                    title: {
+                      text: 'Bus Voltage Angles',
+                      font: { size: 24 },
+                      y: 0.95
+                    },
+                    xaxis: { ...defaultPlotLayout.xaxis, title: { text: 't [s]' }, autorange: true },
+                    yaxis: { ...defaultPlotLayout.yaxis, title: { text: 'θ [°]' }, autorange: true },
+                    showlegend: true,
+                    legend: {
+                      x: 1.1,
+                      y: 1
+                    },
+                    margin: { t: 50, r: 100, b: 50 }
+                  }}
+                  config={{
+                    responsive: true,
+                    displayModeBar: true,
+                    displaylogo: false
+                  }}
+                  style={{ width: '100%', height: '400px' }}
+                />
+              ) : (
+                <div>No voltage angle data available</div>
+              )}
+            </div>
+          </Grid>
+
+          {/* 5. Bus Voltage Phasors Plot */}
+          <Grid item xs={12} md={6}>
+            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+              {results?.v && results.v[0] ? (
+                <Plot
+                  data={results.v[0].map((_, busIdx) => {
+                    const lastIdx = results.v.length - 1;
+                    const magnitude = getMagnitude(results.v[lastIdx][busIdx], true);
+                    const angle = Math.atan2(
+                      results.v[lastIdx][busIdx].imag,
+                      results.v[lastIdx][busIdx].real
+                    );  // Keep in radians like TOPS
+                    return {
+                      type: 'scatterpolar',
+                      mode: 'lines+markers',
+                      name: `Bus ${busIdx + 1}`,
+                      r: [0, magnitude],
+                      theta: [0, angle * 180 / Math.PI],  // Convert to degrees for plotly
+                      marker: { size: 8 },
+                      line: { 
+                        color: [
+                          '#e41a1c',  // red
+                          '#377eb8',  // blue
+                          '#4daf4a',  // green
+                          '#984ea3',  // purple
+                          '#ff7f00',  // orange
+                          '#a65628',  // brown
+                          '#f781bf',  // pink
+                          '#999999'   // grey
+                        ][busIdx % 8],
+                        width: 2
+                      }
+                    };
+                  })}
+                  layout={{
+                    ...defaultPlotLayout,
+                    title: {
+                      text: 'Bus Voltage Phasors',
+                      font: { size: 24 },
+                      y: 0.95
+                    },
+                    showlegend: true,
+                    legend: {
+                      x: 1.1,
+                      y: 1
+                    },
+                    polar: {
+                      radialaxis: {
+                        showticklabels: true,
+                        ticks: '',
+                        autorange: true,
+                        title: 'V [p.u.]',
+                        gridcolor: '#e0e0e0'
+                      },
+                      angularaxis: {
+                        tickmode: 'array',
+                        tickvals: [-180, -90, 0, 90, 180],
+                        ticktext: ['180°', '270°', '0°', '90°', '180°'],
+                        direction: 'clockwise',
+                        period: 360,
+                        gridcolor: '#e0e0e0'
+                      },
+                      bgcolor: '#ffffff'
+                    },
+                    width: 500,
+                    height: 500,
+                    margin: { t: 50, r: 100, b: 50, l: 50 }
+                  }}
+                  config={{
+                    responsive: true,
+                    displayModeBar: true,
+                    displaylogo: false
+                  }}
+                  useResizeHandler={true}
+                  style={{ width: '100%', height: '400px' }}
+                />
+              ) : (
+                <div>No voltage phasor data available</div>
+              )}
+            </div>
+          </Grid>
+          
+          {/* 6. Generator Speeds Plot */}
+          <Grid item xs={12} md={6}>
+            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+              {results?.gen_speed && results.gen_speed[0] ? (
+                <Plot
+                  data={[
+                    ...results.gen_speed[0].map((_, idx) => ({
+                      x: results.t,
+                      y: results.gen_speed.map(speeds => speeds[idx]),
+                      type: 'scatter',
+                      mode: 'lines',
+                      name: `Generator ${idx + 1}`,
+                      line: { simplify: true }
+                    }))
+                  ]}
+                  layout={{
+                    ...defaultPlotLayout,
+                    title: {
+                      text: 'Generator Speeds',
+                      font: { size: 24 },
+                      y: 0.95
+                    },
+                    xaxis: { ...defaultPlotLayout.xaxis, title: { text: 't [s]' }, autorange: true },
+                    yaxis: { ...defaultPlotLayout.yaxis, title: { text: 'ω [p.u.]' }, autorange: true }
+                  }}
+                  config={{
+                    responsive: true,
+                    displayModeBar: true,
+                    displaylogo: false
+                  }}
+                  style={{ width: '100%', height: '400px' }}
+                />
+              ) : (
+                <div>No generator speed data available</div>
+              )}
+            </div>
+          </Grid>
+          
+          {/* 7. Generator Current Plot */}
+          <Grid item xs={12} md={6}>
+            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+              {results && results.gen_I && results.gen_I[0] ? (
+                <Plot
+                  data={results.gen_I[0].map((_, idx) => ({
+                    x: results.t,
+                    y: results.gen_I.map(i => getMagnitude(i[idx], true)),
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: `Generator current ${idx + 1}`
+                  }))}
+                  layout={{
+                    ...defaultPlotLayout,
+                    title: {
+                      text: 'Generator Current',
+                      font: { size: 24 },
+                      y: 0.95
+                    },
+                    xaxis: { ...defaultPlotLayout.xaxis, title: { text: 't [s]' }, autorange: true },
+                    yaxis: { ...defaultPlotLayout.yaxis, title: { text: 'I [A]' }, autorange: true },
+                  }}
+                  config={{
+                    responsive: true,
+                    displayModeBar: true,
+                    displaylogo: false
+                  }}
+                  style={{ width: '100%', height: '400px' }}
+                />
+              ) : (
+                <div>No generator current data available</div>
+              )}
+            </div>
+          </Grid>
+
+          {/* 8. Load Active Power Plot */}
+          <Grid item xs={12} md={6}>
+            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+              {results && results.load_P && results.load_P[0] ? (
+                <Plot
+                  data={results.load_P[0].map((_, idx) => ({
+                    x: results.t,
+                    y: results.load_P.map(p => getMagnitude(p[idx], false)),
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: `Load ${idx + 1}`,
+                    line: { simplify: true }
+                  }))}
+                  layout={{
+                    ...defaultPlotLayout,
+                    title: {
+                      text: 'Load Active Power',
+                      font: { size: 24 },
+                      y: 0.95
+                    },
+                    xaxis: { ...defaultPlotLayout.xaxis, title: { text: 't [s]' }, autorange: true },
+                    yaxis: { ...defaultPlotLayout.yaxis, title: { text: 'P [MW]' }, autorange: true },
+                  }}
+                  config={{
+                    responsive: true,
+                    displayModeBar: true,
+                    displaylogo: false
+                  }}
+                  style={{ width: '100%', height: '400px' }}
+                />
+              ) : (
+                <div>No active power data available</div>
+              )}
+            </div>
+          </Grid>
+
+          {/* 9. Load Reactive Power Plot */}
+          <Grid item xs={12} md={6}>
+            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+              {results && results.load_Q && results.load_Q[0] ? (
+                <Plot
+                  data={results.load_Q[0].map((_, idx) => ({
+                    x: results.t,
+                    // Correctly extract the imaginary part for Reactive Power (Q)
+                    y: results.load_Q.map(q => {
+                      const qValue = q[idx];
+                      // Check if qValue is a complex object, otherwise use the number directly or default to 0
+                      return (qValue && typeof qValue === 'object' && 'imag' in qValue) ? qValue.imag : (typeof qValue === 'number' ? qValue : 0);
+                    }),
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: `Load ${idx + 1} Q` // Changed name for clarity
+                  }))}
+                  layout={{
+                    ...defaultPlotLayout,
+                    title: {
+                      text: 'Load Reactive Power',
+                      font: { size: 24 },
+                      y: 0.95
+                    },
+                    xaxis: { ...defaultPlotLayout.xaxis, title: { text: 't [s]' }, autorange: true },
+                    yaxis: { ...defaultPlotLayout.yaxis, title: { text: 'Q [MVAr]' }, autorange: true }, // Ensure unit is correct
+                  }}
+                  config={{
+                    responsive: true,
+                    displayModeBar: true,
+                    displaylogo: false
+                  }}
+                  style={{ width: '100%', height: '400px' }}
+                />
+              ) : (
+                <div>No reactive power data available</div>
+              )}
+            </div>
+          </Grid>
+
+          {/* 10. Load Current Plot */}
+          <Grid item xs={12} md={6}>
+            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+              {results && results.load_I && results.load_I[0] ? (
+                <Plot
+                  data={results.load_I[0].map((_, idx) => ({
+                    x: results.t,
+                    y: results.load_I.map(i => getMagnitude(i[idx], true)),
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: `Load current ${idx + 1}`
+                  }))}
+                  layout={{
+                    ...defaultPlotLayout,
+                    title: {
+                      text: 'Load Current',
+                      font: { size: 24 },
+                      y: 0.95
+                    },
+                    xaxis: { ...defaultPlotLayout.xaxis, title: { text: 't [s]' }, autorange: true },
+                    yaxis: { ...defaultPlotLayout.yaxis, title: { text: 'I [A]' }, autorange: true },
+                  }}
+                  config={{
+                    responsive: true,
+                    displayModeBar: true,
+                    displaylogo: false
+                  }}
+                  style={{ width: '100%', height: '400px' }}
+                />
+              ) : (
+                <div>No load current data available</div>
+              )}
+            </div>
+          </Grid>
+
+          {/* 11. Transformer Currents Plot */}
+          <Grid item xs={12}>
+            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+              {results && results.trafo_current_from && results.trafo_current_from[0] && 
+               results.trafo_current_to && results.trafo_current_to[0] ? (
+                <Plot
+                  data={[
+                    ...results.trafo_current_from[0].map((_, idx) => ({
+                      x: results.t,
+                      y: results.trafo_current_from.map(i => getMagnitude(i[idx], true)),
+                      type: 'scatter',
+                      mode: 'lines',
+                      name: `Transformer ${idx + 1} (From)`,
+                      line: { dash: 'solid' }
+                    })),
+                    ...results.trafo_current_to[0].map((_, idx) => ({
+                      x: results.t,
+                      y: results.trafo_current_to.map(i => getMagnitude(i[idx], true)),
+                      type: 'scatter',
+                      mode: 'lines',
+                      name: `Transformer ${idx + 1} (To)`,
+                      line: { dash: 'dot' }
+                    }))
+                  ]}
+                  layout={{
+                    ...defaultPlotLayout,
+                    title: {
+                      text: 'Transformer Currents',
+                      font: { size: 24 },
+                      y: 0.95
+                    },
+                    xaxis: { ...defaultPlotLayout.xaxis, title: { text: 't [s]' }, autorange: true },
+                    yaxis: { ...defaultPlotLayout.yaxis, title: { text: 'I [p.u.]' }, autorange: true },
+                  }}
+                  config={{
+                    responsive: true,
+                    displayModeBar: true,
+                    displaylogo: false
+                  }}
+                  style={{ width: '100%', height: '500px' }}
+                />
+              ) : (
+                <div>No transformer current data available</div>
+              )}
+            </div>
+          </Grid>
+
+          {/* 12 & 13. PLL Plots (Conditional) */}
           {parameters.pllParams.enabled && (
             <>
-              {/* PLL Angle Plot */}
               <Grid item xs={12} md={6}>
                 <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
                   {Array.isArray(results.v_angle) && Array.isArray(results.pll1_angle) && Array.isArray(results.pll2_angle) && results.v_angle.length > 0 ? (
@@ -1028,13 +1175,8 @@ const ResultsSection = ({
                           font: { size: 24 },
                           y: 0.95
                         },
-                        xaxis: { title: 'Time [s]' },
-                        yaxis: { 
-                          title: 'Angle [deg]',
-                          range: [-180, 180],
-                          tickmode: 'linear',
-                          dtick: 45
-                        },
+                        xaxis: { ...defaultPlotLayout.xaxis, title: { text: 't [s]' }, autorange: true },
+                        yaxis: { ...defaultPlotLayout.yaxis, title: { text: 'θ [°]' }, autorange: true },
                       }}
                       config={{
                         responsive: true,
@@ -1048,8 +1190,6 @@ const ResultsSection = ({
                   )}
                 </div>
               </Grid>
-
-              {/* PLL Frequency Plot */}
               <Grid item xs={12} md={6}>
                 <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
                   {Array.isArray(results.pll1_freq) && Array.isArray(results.pll2_freq) && results.pll1_freq.length > 0 ? (
@@ -1079,13 +1219,8 @@ const ResultsSection = ({
                           font: { size: 24 },
                           y: 0.95
                         },
-                        xaxis: { title: 'Time [s]' },
-                        yaxis: { 
-                          title: 'Frequency [Hz]',
-                          range: [45, 55],
-                          tickmode: 'linear',
-                          dtick: 1
-                        },
+                        xaxis: { ...defaultPlotLayout.xaxis, title: { text: 't [s]' }, autorange: true },
+                        yaxis: { ...defaultPlotLayout.yaxis, title: { text: 'f [Hz]' }, autorange: true },
                       }}
                       config={{
                         responsive: true,
@@ -1102,52 +1237,6 @@ const ResultsSection = ({
             </>
           )}
 
-          {/* Combined Transformer Current Plot */}
-          <Grid item xs={12}>
-            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
-              {results && results.trafo_current_from && results.trafo_current_from[0] && 
-               results.trafo_current_to && results.trafo_current_to[0] ? (
-                <Plot
-                  data={[
-                    ...results.trafo_current_from[0].map((_, idx) => ({
-                      x: results.t,
-                      y: results.trafo_current_from.map(i => getMagnitude(i[idx], true)),
-                      type: 'scatter',
-                      mode: 'lines',
-                      name: `Transformer ${idx + 1} (From)`,
-                      line: { dash: 'solid' }
-                    })),
-                    ...results.trafo_current_to[0].map((_, idx) => ({
-                      x: results.t,
-                      y: results.trafo_current_to.map(i => getMagnitude(i[idx], true)),
-                      type: 'scatter',
-                      mode: 'lines',
-                      name: `Transformer ${idx + 1} (To)`,
-                      line: { dash: 'dot' }
-                    }))
-                  ]}
-                  layout={{
-                    ...defaultPlotLayout,
-                    title: {
-                      text: 'Transformer Currents',
-                      font: { size: 24 },
-                      y: 0.95
-                    },
-                    xaxis: { title: 'Time [s]' },
-                    yaxis: { title: 'Current [pu]' },
-                  }}
-                  config={{
-                    responsive: true,
-                    displayModeBar: true,
-                    displaylogo: false
-                  }}
-                  style={{ width: '100%', height: '500px' }}
-                />
-              ) : (
-                <div>No transformer current data available</div>
-              )}
-            </div>
-          </Grid>
         </Grid>
       </Paper>
 
@@ -1179,7 +1268,7 @@ const ResultsSection = ({
                       color: '#2ecc71'
                     },
                     name: 'Eigenvalues',
-                    hovertemplate: 'λ = %{x:.3f} + j%{y:.3f}<br>' +
+                    hovertemplate: 'λ = %{x:.2f} + j%{y:.2f}<br>' +
                                  'f = %{customdata[0]:.2f} Hz<br>' +
                                  'ζ = %{customdata[1]:.1f}%<extra></extra>',
                     customdata: results.eigenvalues.real.map((_, i) => [
@@ -1195,20 +1284,22 @@ const ResultsSection = ({
                       y: 0.95
                     },
                     xaxis: { 
-                      title: 'Real Part',
+                      title: { text: 'Real Part' },
                       zeroline: true,
                       zerolinecolor: '#000000',
                       zerolinewidth: 2,
-                      gridcolor: '#e0e0e0'
+                      gridcolor: '#e0e0e0',
+                      autorange: true
                     },
                     yaxis: { 
-                      title: 'Imaginary Part',
+                      title: { text: 'Imaginary Part' },
                       scaleanchor: 'x',
                       scaleratio: 1,
                       zeroline: true,
                       zerolinecolor: '#000000',
                       zerolinewidth: 2,
-                      gridcolor: '#e0e0e0'
+                      gridcolor: '#e0e0e0',
+                      autorange: true
                     },
                     showlegend: false,
                     hovermode: 'closest'
@@ -1278,7 +1369,7 @@ const ResultsSection = ({
                               radialaxis: {
                                 showticklabels: false,
                                 ticks: '',
-                                range: [0, 1.1],  // Add some padding
+                                autorange: true,
                                 showgrid: true,
                                 gridcolor: '#e0e0e0'
                               },
