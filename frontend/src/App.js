@@ -231,45 +231,35 @@ const getPowerFlowInfo = (link, powerFlows) => {
   return { magnitude, direction };
 };
 
-// Helper function to determine line flow direction
-function getLineFlowDirectionSimple(busPower, fromIdx, toIdx) {
-  // Guard for missing data
+// Helper function to determine line flow direction always toward deepest sink
+function getLineFlowDirectionSimple(busPower, fromIdx, toIdx, outagedLineIds = []) {
   if (!busPower || !Array.isArray(busPower) || fromIdx === -1 || toIdx === -1) return 0;
 
-  // Find the index for Bus B8
-  const bus8Idx = initialNetworkData.nodes.findIndex(n => n.id === 'B8');
-
-  // Helper: is this bus neutral?
   const isNeutral = (p) => Math.abs(p) < 1e-4;
-  
-  // Helper function to find the deepest sink/weakest source using BFS
+
   function findDeepestSinkP(startIdx, excludeIdx) {
     const visited = new Set([excludeIdx]);
     const queue = [startIdx];
-    let minP = Infinity; // Initialize minimum P found so far
+    let minP = Infinity;
     let foundNonNeutral = false;
 
     while (queue.length > 0) {
       const idx = queue.shift();
       if (visited.has(idx)) continue;
       visited.add(idx);
-      
       const p = busPower[idx]?.p ?? 0;
-      
-      if (!isNeutral(p)) {
-        minP = Math.min(minP, p); // Track the minimum P found
+      if (!isNeutral(p) && p < 0) {
+        minP = Math.min(minP, p);
         foundNonNeutral = true;
       }
-      
-      // Add neighbors
       const nodeId = initialNetworkData.nodes[idx].id;
       const neighbors = initialNetworkData.links
         .filter(l => {
+          if (l.id && outagedLineIds.includes(l.id)) return false; // skip cut lines
           const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
           const targetId = typeof l.target === 'object' ? l.target.id : l.target;
-          // Only consider neighbors that haven't been visited and are not the excluded node
           return (
-            (sourceId === nodeId && !visited.has(initialNetworkData.nodes.findIndex(n => n.id === targetId))) || 
+            (sourceId === nodeId && !visited.has(initialNetworkData.nodes.findIndex(n => n.id === targetId))) ||
             (targetId === nodeId && !visited.has(initialNetworkData.nodes.findIndex(n => n.id === sourceId)))
           );
         })
@@ -279,55 +269,22 @@ function getLineFlowDirectionSimple(busPower, fromIdx, toIdx) {
             : initialNetworkData.nodes.findIndex(n => n.id === (typeof l.source === 'object' ? l.source.id : l.source))
         )
         .filter(i => i !== -1);
-      
       queue.push(...neighbors);
     }
-    return foundNonNeutral ? minP : null; // Return min P found, or null if no non-neutral node
+    return foundNonNeutral ? minP : null;
   }
 
-  // Function to determine direction using BFS
-  const determineDirectionFromBFS = () => {
-    const pFromSink = findDeepestSinkP(fromIdx, toIdx);
-    const pToSink = findDeepestSinkP(toIdx, fromIdx);
+  const minP_from = findDeepestSinkP(fromIdx, toIdx);
+  const minP_to = findDeepestSinkP(toIdx, fromIdx);
 
-    if (pFromSink !== null && pToSink !== null) {
-      if (pFromSink < pToSink) return -1; // Flow toward fromIdx (deeper sink)
-      if (pToSink < pFromSink) return 1;  // Flow toward toIdx (deeper sink)
-      return 0;
-    }
-    if (pFromSink !== null) return -1; // Only from side found a sink/source
-    if (pToSink !== null) return 1;  // Only to side found a sink/source
-    return 0;
-  };
-
-  // --- Main Logic --- 
-  
-  // Special Case: If B8 is involved, always use BFS
-  if (fromIdx === bus8Idx || toIdx === bus8Idx) {
-    return determineDirectionFromBFS();
-  }
-  
-  // --- Original Logic for non-B8 lines --- 
-  const pFrom = busPower[fromIdx]?.p ?? 0;
-  const pTo = busPower[toIdx]?.p ?? 0;
-
-  // Case 1: Both are not neutral
-  if (!isNeutral(pFrom) && !isNeutral(pTo)) {
-    if (pFrom < pTo) return -1;
-    if (pTo < pFrom) return 1;
+  if (minP_from !== null && minP_to !== null) {
+    if (minP_from < minP_to) return -1;
+    if (minP_to < minP_from) return 1;
     return 0;
   }
-
-  // Case 2: One is neutral (and we know it's not B8 from the check above)
-  if (isNeutral(pFrom) && !isNeutral(pTo)) {
-    return pTo < 0 ? 1 : -1;
-  }
-  if (!isNeutral(pFrom) && isNeutral(pTo)) {
-    return pFrom < 0 ? -1 : 1;
-  }
-
-  // Case 3: Both are neutral (and neither is B8)
-  return determineDirectionFromBFS();
+  if (minP_from !== null) return -1;
+  if (minP_to !== null) return 1;
+  return 0;
 }
 
 function App() {
@@ -1019,8 +976,8 @@ function App() {
       
       const p = busPower[idx]?.p ?? 0;
       
-      if (!isNeutral(p)) {
-        minP = Math.min(minP, p); // Track the minimum P found
+      if (!isNeutral(p) && p < 0) { // Only consider negative P as sinks
+        minP = Math.min(minP, p);
         foundNonNeutral = true;
       }
       
@@ -1053,7 +1010,7 @@ function App() {
     const toId = typeof link.target === 'object' ? link.target.id : link.target;
     const fromIdx = initialNetworkData.nodes.findIndex(n => n.id === fromId);
     const toIdx = initialNetworkData.nodes.findIndex(n => n.id === toId);
-    const dir = getLineFlowDirectionSimple(busPower, fromIdx, toIdx);
+    const dir = getLineFlowDirectionSimple(busPower, fromIdx, toIdx, parameters.lineOutage?.outages?.map(o => o.lineId).filter(Boolean) || []);
     if (dir < 0) {
       return { ...link, source: link.target, target: link.source };
     }
@@ -1089,7 +1046,7 @@ function App() {
           powerFlows={results?.power_flows}
           initialNetworkData={initialNetworkData}
           graphWidth={graphWidth}
-          getLineFlowDirectionSimple={(fromIdx, toIdx) => getLineFlowDirectionSimple(busPower, fromIdx, toIdx)}
+          getLineFlowDirectionSimple={(fromIdx, toIdx) => getLineFlowDirectionSimple(busPower, fromIdx, toIdx, parameters.lineOutage?.outages?.map(o => o.lineId).filter(Boolean) || [])}
           parameters={parameters}
           selectionMode={selectionMode}
           onComponentSelect={(component) => {
@@ -1151,7 +1108,7 @@ function App() {
           parameters={parameters}
           initialNetworkData={initialNetworkData}
           busPower={results.bus_power}
-          getLineFlowDirectionSimple={(fromIdx, toIdx) => getLineFlowDirectionSimple(busPower, fromIdx, toIdx)}
+          getLineFlowDirectionSimple={(fromIdx, toIdx) => getLineFlowDirectionSimple(busPower, fromIdx, toIdx, parameters.lineOutage?.outages?.map(o => o.lineId).filter(Boolean) || [])}
           monitoredComponents={monitoredComponents}
           onRemoveComponent={(id) => {
             setMonitoredComponents(prev => prev.filter(comp => comp.id !== id));

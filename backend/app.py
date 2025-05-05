@@ -316,10 +316,10 @@ def run_simulation_thread(sim_params):
                 'v_magnitude': convert_to_serializable(np.abs(sol.v)),
                 'v_angle': convert_to_serializable(np.angle(sol.v)),
                 'gen_speed': convert_to_serializable(ps.gen['GEN'].speed(sol.x, sol.v)),
-                'gen_I': convert_to_serializable(ps.gen['GEN'].I(sol.x, sol.v)),
-                'load_I': convert_to_serializable(ps.loads['DynamicLoad'].I(sol.x, sol.v)),
-                'load_P': convert_to_serializable(ps.loads['DynamicLoad'].P(sol.x, sol.v)),
-                'load_Q': convert_to_serializable(ps.loads['DynamicLoad'].Q(sol.x, sol.v)),
+                'gen_I': convert_to_serializable(ps.gen['GEN'].i(sol.x, sol.v)),
+                'load_I': convert_to_serializable(ps.loads['DynamicLoad'].i(sol.x, sol.v)),
+                'load_P': convert_to_serializable(ps.loads['DynamicLoad'].p(sol.x, sol.v)),
+                'load_Q': convert_to_serializable(ps.loads['DynamicLoad'].q(sol.x, sol.v)),
                 'trafo_current_from': convert_to_serializable(ps.trafos['DynTrafo'].i_from(sol.x, sol.v)),
                 'trafo_current_to': convert_to_serializable(ps.trafos['DynTrafo'].i_to(sol.x, sol.v))
             }
