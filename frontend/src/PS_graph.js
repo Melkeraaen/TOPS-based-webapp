@@ -50,10 +50,10 @@ const getNodeColor = (node, busPower, selectionMode, hovered = false, selectedCo
       if (change > 1) change = 1;
       if (change < -1) change = -1;
     }
-    // Blue (0), green (+1), red (-1)
+    // Blue (0), red (+1), green (-1)
     if (change === 0) return '#3498db';
-    if (change > 0) return interpolateColor('#3498db', '#4caf50', change); // blue to green
-    if (change < 0) return interpolateColor('#3498db', '#e74c3c', -change); // blue to red
+    if (change > 0) return interpolateColor('#3498db', '#e74c3c', change); // blue to red
+    if (change < 0) return interpolateColor('#3498db', '#4caf50', -change); // blue to green
     return '#3498db';
   }
   if (node.type === 'generator') return '#2ecc71';
