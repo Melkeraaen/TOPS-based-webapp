@@ -766,7 +766,7 @@ const ResultsSection = ({
           </Grid>
 
           {/* 4. Bus Voltage Angles Plot */}
-          <Grid item xs={12} md={6}>
+          {/* <Grid item xs={12} md={6}>
             <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
               {results?.v_angle && Array.isArray(results.v_angle) && results.v_angle.length > 0 && Array.isArray(results.v_angle[0]) ? (
                 <Plot
@@ -817,7 +817,7 @@ const ResultsSection = ({
                 <div>No voltage angle data available</div>
               )}
             </div>
-          </Grid>
+          </Grid> */}
 
           {/* 5. Bus Voltage Phasors Plot */}
           <Grid item xs={12} md={6}>
@@ -1051,85 +1051,85 @@ const ResultsSection = ({
           </Grid>
 
           {/* 10. Load Current Plot */}
-          <Grid item xs={12} md={6}>
-            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
-              {results && results.load_I && results.load_I[0] ? (
-                <Plot
-                  data={results.load_I[0].map((_, idx) => ({
-                    x: results.t,
-                    y: results.load_I.map(i => getMagnitude(i[idx], true)),
-                    type: 'scatter',
-                    mode: 'lines',
-                    name: `Load current ${idx + 1}`
-                  }))}
-                  layout={{
-                    ...defaultPlotLayout,
-                    title: {
-                      text: 'Load Current',
-                      font: { size: 24 },
-                      y: 0.95
-                    },
-                    xaxis: { ...defaultPlotLayout.xaxis, title: { text: 't [s]' }, autorange: true },
-                    yaxis: { ...defaultPlotLayout.yaxis, title: { text: 'I [A]' }, autorange: true },
-                  }}
-                  config={{
-                    responsive: true,
-                    displayModeBar: true,
-                    displaylogo: false
-                  }}
-                  style={{ width: '100%', height: '400px' }}
-                />
-              ) : (
-                <div>No load current data available</div>
-              )}
-            </div>
-          </Grid>
-
-          {/* 11. Transformer Currents Plot */}
-          <Grid item xs={12}>
-            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
-              {results && results.trafo_current_from && results.trafo_current_from[0] && 
-               results.trafo_current_to && results.trafo_current_to[0] ? (
-                <Plot
-                  data={[
-                    ...results.trafo_current_from[0].map((_, idx) => ({
+          <Grid container spacing={2}>
+            <Grid item xs={12} md={6}>
+              <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+                {results && results.load_I && results.load_I[0] ? (
+                  <Plot
+                    data={results.load_I[0].map((_, idx) => ({
                       x: results.t,
-                      y: results.trafo_current_from.map(i => getMagnitude(i[idx], true)),
+                      y: results.load_I.map(i => getMagnitude(i[idx], true)),
                       type: 'scatter',
                       mode: 'lines',
-                      name: `Transformer ${idx + 1} (From)`,
-                      line: { dash: 'solid' }
-                    })),
-                    ...results.trafo_current_to[0].map((_, idx) => ({
-                      x: results.t,
-                      y: results.trafo_current_to.map(i => getMagnitude(i[idx], true)),
-                      type: 'scatter',
-                      mode: 'lines',
-                      name: `Transformer ${idx + 1} (To)`,
-                      line: { dash: 'dot' }
-                    }))
-                  ]}
-                  layout={{
-                    ...defaultPlotLayout,
-                    title: {
-                      text: 'Transformer Currents',
-                      font: { size: 24 },
-                      y: 0.95
-                    },
-                    xaxis: { ...defaultPlotLayout.xaxis, title: { text: 't [s]' }, autorange: true },
-                    yaxis: { ...defaultPlotLayout.yaxis, title: { text: 'I [p.u.]' }, autorange: true },
-                  }}
-                  config={{
-                    responsive: true,
-                    displayModeBar: true,
-                    displaylogo: false
-                  }}
-                  style={{ width: '100%', height: '500px' }}
-                />
-              ) : (
-                <div>No transformer current data available</div>
-              )}
-            </div>
+                      name: `Load current ${idx + 1}`
+                    }))}
+                    layout={{
+                      ...defaultPlotLayout,
+                      title: {
+                        text: 'Load Current',
+                        font: { size: 24 },
+                        y: 0.95
+                      },
+                      xaxis: { ...defaultPlotLayout.xaxis, title: { text: 't [s]' }, autorange: true },
+                      yaxis: { ...defaultPlotLayout.yaxis, title: { text: 'I [A]' }, autorange: true },
+                    }}
+                    config={{
+                      responsive: true,
+                      displayModeBar: true,
+                      displaylogo: false
+                    }}
+                    style={{ width: '100%', height: '400px' }}
+                  />
+                ) : (
+                  <div>No load current data available</div>
+                )}
+              </div>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+                {results && results.trafo_current_from && results.trafo_current_from[0] && 
+                 results.trafo_current_to && results.trafo_current_to[0] ? (
+                  <Plot
+                    data={[
+                      ...results.trafo_current_from[0].map((_, idx) => ({
+                        x: results.t,
+                        y: results.trafo_current_from.map(i => getMagnitude(i[idx], true)),
+                        type: 'scatter',
+                        mode: 'lines',
+                        name: `Transformer ${idx + 1} (From)`,
+                        line: { dash: 'solid' }
+                      })),
+                      ...results.trafo_current_to[0].map((_, idx) => ({
+                        x: results.t,
+                        y: results.trafo_current_to.map(i => getMagnitude(i[idx], true)),
+                        type: 'scatter',
+                        mode: 'lines',
+                        name: `Transformer ${idx + 1} (To)`,
+                        line: { dash: 'dot' }
+                      }))
+                    ]}
+                    layout={{
+                      ...defaultPlotLayout,
+                      title: {
+                        text: 'Transformer Currents',
+                        font: { size: 24 },
+                        y: 0.95
+                      },
+                      xaxis: { ...defaultPlotLayout.xaxis, title: { text: 't [s]' }, autorange: true },
+                      yaxis: { ...defaultPlotLayout.yaxis, title: { text: 'I [p.u.]' }, autorange: true },
+                    }}
+                    config={{
+                      responsive: true,
+                      displayModeBar: true,
+                      displaylogo: false
+                    }}
+                    style={{ width: '100%', height: '400px' }}
+                  />
+                ) : (
+                  <div>No transformer current data available</div>
+                )}
+              </div>
+            </Grid>
           </Grid>
 
           {/* 12 & 13. PLL Plots (Conditional) */}
@@ -1441,7 +1441,7 @@ const ResultsSection = ({
       )}
 
       {/* Line Power Flow Checklist Table */}
-      {busPower && busPower.length > 0 && (
+      {/* {busPower && busPower.length > 0 && (
         <Paper sx={{ p: 3, mb: 3 }}>
           <Typography variant="h6" gutterBottom sx={{ color: 'secondary.main' }}>Power Flow Directions</Typography>
           <TableContainer>
@@ -1483,10 +1483,10 @@ const ResultsSection = ({
             </Table>
           </TableContainer>
         </Paper>
-      )}
+      )} */}
 
       {/* Raw Bus Power Data */}
-      {results && results.bus_power_raw && (
+      {/* {results && results.bus_power_raw && (
         <Paper sx={{ p: 3, mb: 3 }}>
           <Typography variant="h6" gutterBottom sx={{ color: 'secondary.main' }}>Bus Power Injections (Raw)</Typography>
           <TableContainer>
@@ -1508,7 +1508,7 @@ const ResultsSection = ({
             </Table>
           </TableContainer>
         </Paper>
-      )}
+      )} */}
     </>
   );
 };
