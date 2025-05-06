@@ -17,8 +17,16 @@ const formatComplex = (value) => {
   return typeof value === 'number' ? value.toFixed(3) : '0.000';
 };
 
-// Add getNodeColor function
-const getNodeColor = (node, busPower, selectionMode, hovered = false, selectedComponent = null) => {
+// Helper: interpolate between two colors
+function interpolateColor(color1, color2, t) {
+  const c1 = color1.match(/\w\w/g).map(x => parseInt(x, 16));
+  const c2 = color2.match(/\w\w/g).map(x => parseInt(x, 16));
+  const c = c1.map((v, i) => Math.round(v + (c2[i] - v) * t));
+  return `#${c.map(x => x.toString(16).padStart(2, '0')).join('')}`;
+}
+
+// Blue: #3498db, Green: #4caf50, Red: #e74c3c
+const getNodeColor = (node, busPower, selectionMode, hovered = false, selectedComponent = null, parameters = {}) => {
   if (selectedComponent && selectedComponent.id === node.id) {
     return node.type === 'generator' ? '#2ecc71' : 
            node.type === 'load' ? '#3498db' :
@@ -29,8 +37,26 @@ const getNodeColor = (node, busPower, selectionMode, hovered = false, selectedCo
   if (selectionMode && hovered) {
     return '#ff0000';
   }
+  if (node.type === 'load') {
+    // Map L1/L2 to step1/step2
+    let step = null;
+    if (node.id === 'L1') step = parameters.step1;
+    if (node.id === 'L2') step = parameters.step2;
+    let change = 0;
+    if (step) {
+      // Assume base is 0, so change is just g_setp + b_setp
+      change = (step.g_setp || 0) + (step.b_setp || 0);
+      // Clamp to [-1, 1]
+      if (change > 1) change = 1;
+      if (change < -1) change = -1;
+    }
+    // Blue (0), green (+1), red (-1)
+    if (change === 0) return '#3498db';
+    if (change > 0) return interpolateColor('#3498db', '#4caf50', change); // blue to green
+    if (change < 0) return interpolateColor('#3498db', '#e74c3c', -change); // blue to red
+    return '#3498db';
+  }
   if (node.type === 'generator') return '#2ecc71';
-  if (node.type === 'load') return '#3498db';
   if (node.type === 'shunt') return '#9b59b6';
   if (node.type === 'transformer') return '#e74c3c';
   if (node.id && node.id.startsWith('B')) return '#f1c40f';
@@ -208,7 +234,7 @@ const PS_graph = ({
               }
               return node.label;
             }}
-            nodeColor={node => getNodeColor(node, busPower, selectionMode, hoveredNode === node && isSelectable(node), selectedComponent)}
+            nodeColor={node => getNodeColor(node, busPower, selectionMode, hoveredNode === node && isSelectable(node), selectedComponent, parameters)}
             onNodeHover={node => selectionMode ? setHoveredNode(node) : null}
             onNodeClick={handleNodeClick}
             onLinkHover={null}
@@ -275,7 +301,7 @@ const PS_graph = ({
                 // Draw the actual node circle
                 ctx.beginPath();
                 ctx.arc(node.x, node.y, radius, 0, 2 * Math.PI, false);
-                ctx.fillStyle = getNodeColor(node, busPower, selectionMode, node === hoveredNode, selectedComponent);
+                ctx.fillStyle = getNodeColor(node, busPower, selectionMode, node === hoveredNode, selectedComponent, parameters);
                 ctx.fill();
                 ctx.strokeStyle = selectionMode && node === hoveredNode && isSelectable(node) ? '#ff0000' : '#333';
                 ctx.lineWidth = selectionMode && node === hoveredNode && isSelectable(node) ? 2 : 1;
