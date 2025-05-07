@@ -240,12 +240,12 @@ function getLineFlowDirectionSimple(busPower, fromIdx, toIdx, outagedLineIds = [
 
   function findDeepestSinkP(startIdx, excludeIdx) {
     const visited = new Set([excludeIdx]);
-    const queue = [startIdx];
+    const queue = [{ idx: startIdx, prev: null }];
     let minP = Infinity;
     let foundNonNeutral = false;
 
     while (queue.length > 0) {
-      const idx = queue.shift();
+      const { idx, prev } = queue.shift();
       if (visited.has(idx)) continue;
       visited.add(idx);
       const p = busPower[idx]?.p ?? 0;
@@ -257,20 +257,29 @@ function getLineFlowDirectionSimple(busPower, fromIdx, toIdx, outagedLineIds = [
       const neighbors = initialNetworkData.links
         .filter(l => {
           if (l.id && outagedLineIds.includes(l.id)) return false; // skip cut lines
+          if (l.type !== 'line' && l.type !== 'transformer') return false;
           const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
           const targetId = typeof l.target === 'object' ? l.target.id : l.target;
-          return (
-            (sourceId === nodeId && !visited.has(initialNetworkData.nodes.findIndex(n => n.id === targetId))) ||
-            (targetId === nodeId && !visited.has(initialNetworkData.nodes.findIndex(n => n.id === sourceId)))
-          );
+          // Find the neighbor index
+          const neighborId = sourceId === nodeId ? targetId : targetId === nodeId ? sourceId : null;
+          if (!neighborId) return false;
+          const neighborIdx = initialNetworkData.nodes.findIndex(n => n.id === neighborId);
+          // Don't go back to the previous node (prevents parallel line bounce)
+          if (neighborIdx === prev) return false;
+          // Don't revisit already visited nodes
+          if (visited.has(neighborIdx)) return false;
+          return true;
         })
-        .map(l =>
-          (typeof l.source === 'object' ? l.source.id : l.source) === nodeId
-            ? initialNetworkData.nodes.findIndex(n => n.id === (typeof l.target === 'object' ? l.target.id : l.target))
-            : initialNetworkData.nodes.findIndex(n => n.id === (typeof l.source === 'object' ? l.source.id : l.source))
-        )
+        .map(l => {
+          const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
+          const targetId = typeof l.target === 'object' ? l.target.id : l.target;
+          const neighborId = sourceId === nodeId ? targetId : targetId === nodeId ? sourceId : null;
+          return initialNetworkData.nodes.findIndex(n => n.id === neighborId);
+        })
         .filter(i => i !== -1);
-      queue.push(...neighbors);
+      neighbors.forEach(neighborIdx => {
+        queue.push({ idx: neighborIdx, prev: idx });
+      });
     }
     return foundNonNeutral ? minP : null;
   }
@@ -461,7 +470,7 @@ function App() {
   const downloadExcel = () => {
     if (!results) return;
 
-    // Prepare data for Excel
+    // Prepare data for main simulation results (time series)
     const data = results.t.map((time, index) => {
       const baseData = {
         'Time [s]': time.toFixed(3),
@@ -506,7 +515,6 @@ function App() {
       return baseData;
     });
 
-    // Create workbook and worksheet
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Simulation Results');
@@ -535,6 +543,227 @@ function App() {
 
     // Apply column widths
     ws['!cols'] = Object.values(colWidths);
+
+    // === 1. Eigenvalues & Modes Sheet ===
+    if (results.eigenvalues && results.eigenvalues.real && results.eigenvalues.real.length > 0) {
+      const eigenSheet = [];
+      // Eigenvalues summary
+      eigenSheet.push({
+        'Eigenvalue #': 'Index',
+        'Real': 'Real',
+        'Imag': 'Imag',
+        'Frequency [Hz]': 'Frequency [Hz]',
+        'Damping [%]': 'Damping [%]'
+      });
+      for (let i = 0; i < results.eigenvalues.real.length; ++i) {
+        eigenSheet.push({
+          'Eigenvalue #': i + 1,
+          'Real': results.eigenvalues.real[i],
+          'Imag': results.eigenvalues.imag[i],
+          'Frequency [Hz]': results.eigenvalues.frequency ? results.eigenvalues.frequency[i] : '',
+          'Damping [%]': results.eigenvalues.damping ? results.eigenvalues.damping[i] : ''
+        });
+      }
+      // Mode shapes (if available)
+      if (results.eigenvalues.mode_shapes && results.eigenvalues.mode_shapes.magnitude && results.eigenvalues.mode_shapes.angle) {
+        eigenSheet.push({});
+        eigenSheet.push({'Eigenvalue #': 'Mode Shapes (Magnitude/Angle for each Generator)'});
+        const numModes = results.eigenvalues.mode_shapes.magnitude[0]?.length || 0;
+        const numGens = results.eigenvalues.mode_shapes.magnitude.length;
+        for (let mode = 0; mode < numModes; ++mode) {
+          for (let gen = 0; gen < numGens; ++gen) {
+            eigenSheet.push({
+              'Eigenvalue #': `Mode ${mode + 1} - Gen ${gen + 1}`,
+              'Real': results.eigenvalues.mode_shapes.magnitude[gen][mode],
+              'Imag': results.eigenvalues.mode_shapes.angle[gen][mode]
+            });
+          }
+        }
+      }
+      const wsEigen = XLSX.utils.json_to_sheet(eigenSheet);
+      XLSX.utils.book_append_sheet(wb, wsEigen, 'Eigenvalues & Modes');
+    }
+
+    // === 2. Bus Power Comparison Sheet ===
+    if (results.bus_power_raw && busPower && busPower.length > 0) {
+      const busPowerSheet = [];
+      busPowerSheet.push({
+        'Bus': 'Bus',
+        'Initial P (raw)': 'Initial P (raw)',
+        'Initial Q (raw)': 'Initial Q (raw)',
+        'Final P': 'Final P',
+        'Final Q': 'Final Q'
+      });
+      // Parse raw injections
+      const parseRaw = val => {
+        const match = val.match(/\(([-+]?\d+\.?\d*)([-+]\d+\.?\d*)j\)/);
+        if (match) {
+          return { real: parseFloat(match[1]), imag: parseFloat(match[2]) };
+        }
+        return { real: 0, imag: 0 };
+      };
+      for (let i = 0; i < busPower.length; ++i) {
+        const busId = initialNetworkData.nodes[i]?.id || (i + 1);
+        const raw = results.bus_power_raw && results.bus_power_raw[i] ? parseRaw(results.bus_power_raw[i]) : { real: '', imag: '' };
+        const final = busPower[i] || { p: '', q: '' };
+        busPowerSheet.push({
+          'Bus': busId,
+          'Initial P (raw)': raw.real,
+          'Initial Q (raw)': raw.imag,
+          'Final P': final.p,
+          'Final Q': final.q
+        });
+      }
+      const wsBusPower = XLSX.utils.json_to_sheet(busPowerSheet);
+      XLSX.utils.book_append_sheet(wb, wsBusPower, 'Bus Power Comparison');
+    }
+
+    // === 3. Islands Sheet ===
+    // Use logic from ResultsSection.js
+    const detectIslands = (networkData, lineOutage) => {
+      const busNodes = networkData.nodes.filter(node => node.id?.toString().startsWith('B'));
+      const visited = new Set();
+      const islands = [];
+      const dfs = (nodeId, currentIsland) => {
+        visited.add(nodeId);
+        currentIsland.add(nodeId);
+        networkData.links.forEach(link => {
+          if (link.type !== 'line' && link.type !== 'transformer') return;
+          let isOutaged = false;
+          if (lineOutage?.enabled && lineOutage?.outages) {
+            isOutaged = lineOutage.outages.some(outage => outage.lineId === link.id);
+          }
+          if (isOutaged) return;
+          const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+          const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+          const nextNode = sourceId === nodeId ? targetId : targetId === nodeId ? sourceId : null;
+          if (nextNode && !visited.has(nextNode)) {
+            dfs(nextNode, currentIsland);
+          }
+        });
+      };
+      busNodes.forEach(node => {
+        if (!visited.has(node.id)) {
+          const currentIsland = new Set();
+          dfs(node.id, currentIsland);
+          if (currentIsland.size > 0) {
+            islands.push(currentIsland);
+          }
+        }
+      });
+      if (islands.length === 0 && busNodes.length > 0) {
+        islands.push(new Set(busNodes.map(node => node.id)));
+      }
+      return islands;
+    };
+    const mapGeneratorsToIslands = (islands, networkData) => {
+      const genMapping = {};
+      networkData.links.forEach(link => {
+        if (link.type === 'generator_connection') {
+          const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+          const genId = sourceId.replace('G', '');
+          const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+          islands.forEach((island, idx) => {
+            if (island.has(targetId)) {
+              genMapping[parseInt(genId) - 1] = idx;
+            }
+          });
+        }
+      });
+      return genMapping;
+    };
+    const calculateIslandFrequencies = (islands, genMapping, genSpeeds) => {
+      return islands.map(island => {
+        const islandGens = Object.entries(genMapping)
+          .filter(([_, islandId]) => islandId === islands.indexOf(island))
+          .map(([genId]) => parseInt(genId));
+        const avgSpeed = islandGens.reduce((sum, genId) => {
+          return sum + genSpeeds[genId];
+        }, 0) / islandGens.length;
+        return 50 * (1 + avgSpeed);
+      });
+    };
+    if (results.gen_speed && results.gen_speed.length > 0) {
+      const latestSpeeds = results.gen_speed[results.gen_speed.length - 1];
+      const islands = detectIslands(initialNetworkData, parameters.lineOutage || []);
+      const genMapping = mapGeneratorsToIslands(islands, initialNetworkData);
+      const frequencies = calculateIslandFrequencies(islands, genMapping, latestSpeeds);
+      const islandSheet = [];
+      islandSheet.push({
+        'Island #': 'Island #',
+        'Buses': 'Buses',
+        'Generators': 'Generators',
+        'Frequency [Hz]': 'Frequency [Hz]'
+      });
+      islands.forEach((island, idx) => {
+        const buses = Array.from(island).join(', ');
+        const generators = Object.entries(genMapping)
+          .filter(([_, islandId]) => islandId === idx)
+          .map(([genId]) => `G${parseInt(genId) + 1}`)
+          .join(', ');
+        islandSheet.push({
+          'Island #': idx + 1,
+          'Buses': buses,
+          'Generators': generators,
+          'Frequency [Hz]': frequencies[idx]?.toFixed(3)
+        });
+      });
+      const wsIslands = XLSX.utils.json_to_sheet(islandSheet);
+      XLSX.utils.book_append_sheet(wb, wsIslands, 'Islands');
+    }
+
+    // === 4. Power Flow Directions Sheet ===
+    if (results && results.bus_power && networkData && networkData.links) {
+      const powerFlowSheet = [];
+      // Add 2 empty rows for margin
+      powerFlowSheet.push({}, {});
+      powerFlowSheet.push({
+        'Line': 'Line',
+        'From Bus': 'From Bus',
+        'To Bus': 'To Bus',
+        'From Bus P (MW)': 'From Bus P (MW)',
+        'To Bus P (MW)': 'To Bus P (MW)',
+        'Direction': 'Direction'
+      });
+      networkData.links.filter(l => l.type === 'line' || l.type === 'transformer').forEach((link, idx) => {
+        const fromId = typeof link.source === 'object' ? link.source.id : link.source;
+        const toId = typeof link.target === 'object' ? link.target.id : link.target;
+        const fromIdx = initialNetworkData.nodes.findIndex(n => n.id === fromId);
+        const toIdx = initialNetworkData.nodes.findIndex(n => n.id === toId);
+        const fromP = results.bus_power[fromIdx]?.p ?? 0;
+        const toP = results.bus_power[toIdx]?.p ?? 0;
+        let dirText = '-';
+        if (fromP > toP) dirText = `towards bus ${toId}`;
+        else if (toP > fromP) dirText = `towards bus ${fromId}`;
+        powerFlowSheet.push({
+          'Line': link.id || `${fromId}-${toId}`,
+          'From Bus': fromId,
+          'To Bus': toId,
+          'From Bus P (MW)': fromP.toFixed(3),
+          'To Bus P (MW)': toP.toFixed(3),
+          'Direction': dirText
+        });
+      });
+      // Add 2 empty rows for margin
+      powerFlowSheet.push({}, {});
+      const wsPowerFlow = XLSX.utils.json_to_sheet(powerFlowSheet, { skipHeader: true });
+      XLSX.utils.book_append_sheet(wb, wsPowerFlow, 'Power Flow Directions');
+    }
+
+    // Add 2 empty rows for margin to all other sheets
+    function addSheetMargins(ws) {
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      // Insert 2 empty rows at the top
+      for (let i = 0; i < 2; ++i) {
+        XLSX.utils.sheet_add_json(ws, [{}], { skipHeader: true, origin: -1 });
+      }
+      // Insert 2 empty rows at the bottom
+      for (let i = 0; i < 2; ++i) {
+        XLSX.utils.sheet_add_json(ws, [{}], { skipHeader: true, origin: { r: range.e.r + 3 + i, c: 0 } });
+      }
+    }
+    // Add margins to all sheets
+    Object.values(wb.Sheets).forEach(addSheetMargins);
 
     // Save file
     XLSX.writeFile(wb, 'simulation_results.xlsx');
@@ -975,12 +1204,12 @@ function App() {
   // If both are neutral, walk the network to find the deepest sink/weakest source
   function findDeepestSinkP(startIdx, excludeIdx) {
     const visited = new Set([excludeIdx]);
-    const queue = [startIdx];
+    const queue = [{ idx: startIdx, prev: null }];
     let minP = Infinity; // Initialize minimum P found so far
     let foundNonNeutral = false;
 
     while (queue.length > 0) {
-      const idx = queue.shift();
+      const { idx, prev } = queue.shift();
       if (visited.has(idx)) continue;
       visited.add(idx);
       
@@ -1009,7 +1238,9 @@ function App() {
         )
         .filter(i => i !== -1);
       
-      queue.push(...neighbors);
+      neighbors.forEach(neighborIdx => {
+        queue.push({ idx: neighborIdx, prev: idx });
+      });
     }
     return foundNonNeutral ? minP : null; // Return min P found, or null if no non-neutral node
   }
