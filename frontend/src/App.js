@@ -1,3 +1,6 @@
+// Main application component for power system simulation and visualization
+// Handles network data, simulation parameters, and user interactions
+
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Container, 
@@ -14,7 +17,7 @@ import PS_graph from './PS_graph';
 import ResultsSection from './ResultsSection';
 import ParameterControls from './ParameterControls';
 
-// Add a new ButtonPanel component right after PS_graph import
+// Control panel component for simulation actions and parameter management
 const ButtonPanel = ({ 
   saveParameters,
   handleStartSimulation,
@@ -79,31 +82,11 @@ const ButtonPanel = ({
   </Box>
 );
 
-// Primary API endpoint for simulation control
+// API configuration
 const API_BASE_URL = 'http://127.0.0.1:8000/api';
 
-// Default plot layout configuration
-const defaultPlotLayout = {
-  height: 400,
-  margin: { t: 50, r: 50, l: 50, b: 50 },
-  plot_bgcolor: '#ffffff',
-  paper_bgcolor: '#ffffff',
-  showlegend: true,
-  legend: { x: 1.05, y: 1 },
-  font: { family: 'Arial, sans-serif' },
-  xaxis: {
-    gridcolor: '#e0e0e0',
-    zerolinecolor: '#808080',
-    zerolinewidth: 1
-  },
-  yaxis: {
-    gridcolor: '#e0e0e0',
-    zerolinecolor: '#808080',
-    zerolinewidth: 1
-  }
-};
-
-// Power system network data
+// Network topology definition
+// Defines the power system structure including buses, generators, loads, and connections
 const initialNetworkData = {
   nodes: [
     // 20kV buses with generators
@@ -169,7 +152,8 @@ const initialNetworkData = {
   ]
 };
 
-// Helper function to format complex numbers
+// Utility function to format complex numbers for display
+// Converts complex numbers to string representation with 3 decimal places
 const formatComplex = (value) => {
   if (value && typeof value === 'object' && 'real' in value && 'imag' in value) {
     const real = value.real.toFixed(3);
@@ -180,7 +164,8 @@ const formatComplex = (value) => {
   return typeof value === 'number' ? value.toFixed(3) : '0.000';
 };
 
-// Helper function to get magnitude of complex value
+// Utility function to calculate magnitude of complex values
+// Handles both phasor quantities (voltages/currents) and power/speed values
 const getMagnitude = (value, isPhasor = false) => {
   if (value && typeof value === 'object' && 'real' in value && 'imag' in value) {
     // For complex numbers, calculate magnitude
@@ -208,16 +193,8 @@ const getMagnitude = (value, isPhasor = false) => {
   return 0;
 };
 
-// Add helper function to calculate power flow magnitude and direction
-const getPowerFlowInfo = (link, powerFlows) => {
-  if (!powerFlows || !powerFlows[link.id]) return null;
-  const flow = powerFlows[link.id];
-  const magnitude = Math.sqrt(flow.p_from * flow.p_from + flow.q_from * flow.q_from);
-  const direction = flow.p_from >= 0 ? 1 : -1; // Flow direction based on real power
-  return { magnitude, direction };
-};
-
-// Helper function to determine line flow direction always toward deepest sink
+// Determines power flow direction in transmission lines
+// Uses breadth-first search to find the deepest sink in the network
 function getLineFlowDirectionSimple(busPower, fromIdx, toIdx, outagedLineIds = []) {
   if (!busPower || !Array.isArray(busPower) || fromIdx === -1 || toIdx === -1) return 0;
 
@@ -312,21 +289,9 @@ function App() {
         { transformerId: '0', time: 0, ratioChange: 1.0 }
       ]
     },
-    noiseParams: {
-      loads: {
-        enabled: false,
-        std_dev: 0.01
-      },
-      generators: {
-        enabled: false,
-        std_dev: 0.01
-      },
-      filter_time: 0.1
-    },
     t_end: 20
   });
   const [tEndInput, setTEndInput] = useState('');
-  const [powerFlows, setPowerFlows] = useState({});
   const [busPower, setBusPower] = useState(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedComponent, setSelectedComponent] = useState(null);
@@ -419,7 +384,7 @@ function App() {
           if (!response.ok) {
             throw new Error('Failed to save parameters');
           }
-          const data = await response.json();
+          await response.json();
         } catch (err) {
           setError('Failed to save parameters: ' + err.message);
         }
@@ -868,13 +833,6 @@ function App() {
     }));
   };
 
-  // Add this effect to update powerFlows only when results.lines is available
-  useEffect(() => {
-    if (results && results.lines) {
-      setPowerFlows(results.lines);
-    }
-  }, [results]);
-
   // Update busPower when results.bus_power is available
   useEffect(() => {
     if (results && results.bus_power) {
@@ -908,7 +866,7 @@ function App() {
           graphRef={graphRef}
           networkData={networkData}
           busPower={results?.bus_power}
-          powerFlows={results?.power_flows}
+          powerFlows={results?.lines}
           initialNetworkData={initialNetworkData}
           graphWidth={graphWidth}
           getLineFlowDirectionSimple={(fromIdx, toIdx) => getLineFlowDirectionSimple(busPower, fromIdx, toIdx, parameters.lineOutage?.outages?.map(o => o.lineId).filter(Boolean) || [])}
@@ -1045,11 +1003,6 @@ function App() {
                 handleRemoveTapChange={handleRemoveTapChange}
                 handleAddTapChange={handleAddTapChange}
                 saveParameters={saveParameters}
-                handleStartSimulation={handleStartSimulation}
-                downloadExcel={downloadExcel}
-                loading={loading}
-                results={results}
-                error={error}
               />
             </Grid>
           </Grid>

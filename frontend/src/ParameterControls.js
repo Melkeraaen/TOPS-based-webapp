@@ -1,3 +1,6 @@
+// Parameter control interface for power system simulation
+// Provides user controls for load steps, line outages, and system parameters
+
 import React from 'react';
 import { 
   Paper, 
@@ -17,7 +20,8 @@ import {
   Container
 } from '@mui/material';
 
-// Component for rendering a time slider with consistent styling
+// Time control slider component with consistent styling
+// Used for setting simulation time points and durations
 const TimeSlider = ({ value, onChange, label, max }) => (
   <Box sx={{ mb: 3 }}>
     <Typography gutterBottom>{label || "Time (s)"}</Typography>
@@ -38,6 +42,8 @@ const TimeSlider = ({ value, onChange, label, max }) => (
   </Box>
 );
 
+// Main parameter control component
+// Manages all simulation parameters including load steps, line outages, and tap changers
 const ParameterControls = ({ 
   parameters, 
   setParameters, 
@@ -49,14 +55,10 @@ const ParameterControls = ({
   handleAddLineOutage,
   handleRemoveTapChange,
   handleAddTapChange,
-  saveParameters,
-  handleStartSimulation,
-  downloadExcel,
-  loading,
-  results,
-  error
+  saveParameters
 }) => {
-  // Helper function to render load step parameters (Step 1 and Step 2)
+  // Load step parameter interface
+  // Controls for load changes at specific time points
   const renderLoadStepParameters = (step) => (
     <Paper elevation={2} sx={{ p: 3, bgcolor: 'background.default' }}>
       <Typography variant="h6" gutterBottom sx={{ color: 'secondary.main' }}>Step {step}</Typography>
@@ -108,7 +110,8 @@ const ParameterControls = ({
     </Paper>
   );
 
-  // Helper function to render line outage parameters
+  // Line outage configuration interface
+  // Controls for line disconnection and reconnection events
   const renderLineOutageParameters = () => (
     <Paper elevation={2} sx={{ p: 3, bgcolor: 'background.default' }}>
       <Typography variant="h6" gutterBottom sx={{ color: 'secondary.main' }}>Line Outage</Typography>

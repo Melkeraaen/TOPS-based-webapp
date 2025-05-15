@@ -1,3 +1,6 @@
+// Power system visualization component using force-directed graph
+// Renders the network topology with interactive features and dynamic styling
+
 import React, { useEffect, useRef, useState } from 'react';
 import { 
   Box,
@@ -6,7 +9,8 @@ import {
 } from '@mui/material';
 import ForceGraph2D from 'react-force-graph-2d';
 
-// Helper: interpolate between two colors
+// Color interpolation utility for visual feedback
+// Blends between two hex colors based on a ratio t (0-1)
 function interpolateColor(color1, color2, t) {
   const c1 = color1.match(/\w\w/g).map(x => parseInt(x, 16));
   const c2 = color2.match(/\w\w/g).map(x => parseInt(x, 16));
@@ -52,6 +56,8 @@ const getNodeColor = (node, busPower, selectionMode, hovered = false, selectedCo
   return '#f1c40f';
 };
 
+// Power flow calculation for transmission lines
+// Returns magnitude and direction of power flow
 const getPowerFlowInfo = (link, powerFlows) => {
   if (!powerFlows || !powerFlows[link.id]) return null;
   const flow = powerFlows[link.id];
@@ -60,6 +66,8 @@ const getPowerFlowInfo = (link, powerFlows) => {
   return { magnitude, direction };
 };
 
+// Component selection validation
+// Determines if a node can be selected based on its type and ID
 const isSelectable = (node) => {
   if (!node || node.type === 'shunt') return false;
   if (node.id) {
@@ -68,6 +76,8 @@ const isSelectable = (node) => {
   return false;
 };
 
+// Main graph component with interactive features
+// Handles visualization, selection, and monitoring of power system components
 const PS_graph = ({ 
   graphRef,
   networkData, 

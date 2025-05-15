@@ -1,3 +1,6 @@
+// Detailed component monitoring visualization
+// Displays time-series plots for selected power system components
+
 import React from 'react';
 import { 
   Grid, 
@@ -9,7 +12,8 @@ import {
 import Plot from 'react-plotly.js';
 import CloseIcon from '@mui/icons-material/Close';
 
-// Default plot layout
+// Standard plot configuration
+// Defines consistent styling for all component plots
 const defaultPlotLayout = {
   height: 350,
   margin: { t: 80, r: 120, l: 100, b: 100 },
@@ -30,7 +34,8 @@ const defaultPlotLayout = {
   }
 };
 
-// Helper function to get magnitude of complex value
+// Complex number magnitude calculation
+// Handles both phasor quantities and power values
 const getMagnitude = (value, isPhasor = false) => {
   if (value && typeof value === 'object' && 'real' in value && 'imag' in value) {
     const magnitude = Math.sqrt(value.real * value.real + value.imag * value.imag);
@@ -50,7 +55,8 @@ const getMagnitude = (value, isPhasor = false) => {
   return 0;
 };
 
-// Component to bus mappings
+// Component to bus connection mapping
+// Defines the electrical connections between components and buses
 const componentBusMapping = {
   generator: {
     'G1': 'B1',
@@ -66,11 +72,14 @@ const componentBusMapping = {
   }
 };
 
-// Helper function to find bus index by ID
+// Bus index lookup utility
+// Finds the array index of a bus in the network data
 const findBusIndex = (busId, initialNetworkData) => {
   return initialNetworkData.nodes.findIndex(n => n.id === busId);
 };
 
+// Main component monitoring interface
+// Renders detailed plots for selected generators, transformers, and other components
 const FocusedComponentPlots = ({ results, monitoredComponents, initialNetworkData, onRemoveComponent }) => {
   if (!results || !monitoredComponents || monitoredComponents.length === 0) return null;
 

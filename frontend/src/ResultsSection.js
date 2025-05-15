@@ -1,3 +1,6 @@
+// Results visualization component for power system simulation
+// Displays plots, tables, and analysis of simulation results
+
 import React, { useState, useEffect } from 'react';
 import { 
   Grid, 
@@ -21,7 +24,8 @@ import {
 import Plot from 'react-plotly.js';
 import FocusedComponentPlots from './FocusedComponentPlots';
 
-// Common colors for plots
+// Color scheme for visualization components
+// Defines consistent colors for buses, gauges, and status indicators
 const plotColors = {
   buses: [
     '#e41a1c', // red
@@ -45,7 +49,8 @@ const plotColors = {
   }
 };
 
-// Default plot layout configuration
+// Default configuration for plot layouts
+// Sets consistent styling and dimensions for all plots
 const defaultPlotLayout = {
   height: 400,
   margin: { t: 80, r: 120, l: 100, b: 100 },
@@ -66,7 +71,8 @@ const defaultPlotLayout = {
   }
 };
 
-// Helper function to get magnitude of complex value
+// Complex number magnitude calculation
+// Handles both phasor quantities and power values
 const getMagnitude = (value, isPhasor = false) => {
   if (value && typeof value === 'object' && 'real' in value && 'imag' in value) {
     const magnitude = Math.sqrt(value.real * value.real + value.imag * value.imag);
@@ -86,7 +92,8 @@ const getMagnitude = (value, isPhasor = false) => {
   return 0;
 };
 
-// Helper function to detect islands in the network
+// Network topology analysis
+// Identifies electrically isolated sections of the power system
 const detectIslands = (networkData, lineOutage) => {
   const busNodes = networkData.nodes.filter(node => node.id?.toString().startsWith('B'));
   const visited = new Set();
@@ -142,7 +149,8 @@ const detectIslands = (networkData, lineOutage) => {
   return islands;
 };
 
-// Helper function to map generators to islands
+// Generator mapping utility
+// Associates generators with their respective electrical islands
 const mapGeneratorsToIslands = (islands, networkData) => {
   const genMapping = {};
   
@@ -166,7 +174,8 @@ const mapGeneratorsToIslands = (islands, networkData) => {
   return genMapping;
 };
 
-// Helper function to calculate island frequencies
+// Frequency calculation for islanded systems
+// Computes average frequency for each electrical island
 const calculateIslandFrequencies = (islands, genMapping, genSpeeds) => {
   return islands.map(island => {
     const islandGens = Object.entries(genMapping)
@@ -181,7 +190,8 @@ const calculateIslandFrequencies = (islands, genMapping, genSpeeds) => {
   });
 };
 
-// Power Injections Plot Component
+// Power injection visualization
+// Plots active and reactive power at selected buses
 const PowerInjectionsPlot = ({ 
   results,
   busPower,
