@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { 
   Paper, 
   Typography, 
@@ -13,9 +13,7 @@ import {
   Select,
   FormControlLabel,
   Switch,
-  Card,
   Button,
-  CircularProgress,
   Container
 } from '@mui/material';
 
@@ -54,13 +52,9 @@ const ParameterControls = ({
   saveParameters,
   handleStartSimulation,
   downloadExcel,
-  exportPlotsToPDF,
   loading,
-  exportingPdf,
   results,
-  error,
-  componentViewerOpen,
-  setComponentViewerOpen
+  error
 }) => {
   // Helper function to render load step parameters (Step 1 and Step 2)
   const renderLoadStepParameters = (step) => (
@@ -360,99 +354,6 @@ const ParameterControls = ({
     </Paper>
   );
 
-  // Helper function to render PLL control parameters
-  const renderPLLControlParameters = () => (
-    <Paper elevation={2} sx={{ p: 3, bgcolor: 'background.default' }}>
-      <Typography variant="h6" gutterBottom sx={{ color: 'secondary.main' }}>PLL Control</Typography>
-      
-      <FormControlLabel
-        control={
-          <Switch
-            checked={parameters.pllParams.enabled}
-            onChange={(e) => setParameters(prev => ({
-              ...prev,
-              pllParams: {
-                ...prev.pllParams,
-                enabled: e.target.checked
-              }
-            }))}
-          />
-        }
-        label="Enable PLL"
-      />
-      
-      {parameters.pllParams.enabled && (
-        <Box sx={{ mt: 2 }}>
-          {/* PLL1 Parameters */}
-          <Typography variant="subtitle1" gutterBottom>PLL1 Parameters</Typography>
-          <TextField
-            label="Filter Time Constant (T_filter)"
-            type="number"
-            value={parameters.pllParams.pll1.T_filter}
-            onChange={(e) => setParameters(prev => ({
-              ...prev,
-              pllParams: {
-                ...prev.pllParams,
-                pll1: {
-                  ...prev.pllParams.pll1,
-                  T_filter: parseFloat(e.target.value)
-                }
-              }
-            }))}
-            fullWidth
-            sx={{ mb: 2 }}
-            InputProps={{
-              inputProps: { step: 0.001 }
-            }}
-          />
-
-          {/* PLL2 Parameters */}
-          <Typography variant="subtitle1" gutterBottom sx={{ mt: 2 }}>PLL2 Parameters</Typography>
-          <TextField
-            label="Proportional Gain (K_p)"
-            type="number"
-            value={parameters.pllParams.pll2.K_p}
-            onChange={(e) => setParameters(prev => ({
-              ...prev,
-              pllParams: {
-                ...prev.pllParams,
-                pll2: {
-                  ...prev.pllParams.pll2,
-                  K_p: parseFloat(e.target.value)
-                }
-              }
-            }))}
-            fullWidth
-            sx={{ mb: 2 }}
-            InputProps={{
-              inputProps: { step: 1 }
-            }}
-          />
-          <TextField
-            label="Integral Gain (K_i)"
-            type="number"
-            value={parameters.pllParams.pll2.K_i}
-            onChange={(e) => setParameters(prev => ({
-              ...prev,
-              pllParams: {
-                ...prev.pllParams,
-                pll2: {
-                  ...prev.pllParams.pll2,
-                  K_i: parseFloat(e.target.value)
-                }
-              }
-            }))}
-            fullWidth
-            sx={{ mb: 2 }}
-            InputProps={{
-              inputProps: { step: 1 }
-            }}
-          />
-        </Box>
-      )}
-    </Paper>
-  );
-
   // Main render
   return (
     <Container maxWidth="lg" sx={{ pt: 2, pb: 4 }}>
@@ -472,7 +373,6 @@ const ParameterControls = ({
         {/* Right Column: Even More Controls */}
         <Grid item xs={12} md={4}>
           {renderTapChangerParameters()}
-          {renderPLLControlParameters()}
         </Grid>
       </Grid>
     </Container>

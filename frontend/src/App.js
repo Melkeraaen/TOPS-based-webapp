@@ -7,17 +7,12 @@ import {
   Button,
   Box,
   Grid,
-  Select,
-  MenuItem,
   TextField
 } from '@mui/material';
 import * as XLSX from 'xlsx';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 import PS_graph from './PS_graph';
 import ResultsSection from './ResultsSection';
 import ParameterControls from './ParameterControls';
-import ComponentViewer from './ComponentViewer';
 
 // Add a new ButtonPanel component right after PS_graph import
 const ButtonPanel = ({ 
@@ -84,6 +79,7 @@ const ButtonPanel = ({
   </Box>
 );
 
+// Primary API endpoint for simulation control
 const API_BASE_URL = 'http://127.0.0.1:8000/api';
 
 // Default plot layout configuration
@@ -212,17 +208,6 @@ const getMagnitude = (value, isPhasor = false) => {
   return 0;
 };
 
-// Add getNodeColor function
-const getNodeColor = (node, busPower) => {
-  // fallback to type-based coloring only
-  if (node.type === 'generator') return '#2ecc71';
-  if (node.type === 'load') return '#3498db';
-  if (node.type === 'shunt') return '#9b59b6';
-  if (node.type === 'transformer') return '#e74c3c';
-  if (node.id && node.id.startsWith('B')) return '#f1c40f'; // always yellow for buses
-  return '#f1c40f';
-};
-
 // Add helper function to calculate power flow magnitude and direction
 const getPowerFlowInfo = (link, powerFlows) => {
   if (!powerFlows || !powerFlows[link.id]) return null;
@@ -303,7 +288,6 @@ function App() {
   const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
   const [networkData, setNetworkData] = useState(initialNetworkData);
-  const [simulationId, setSimulationId] = useState(null);
   const [graphWidth, setGraphWidth] = useState(window.innerWidth * 0.8);
   const [parameters, setParameters] = useState({
     step1: { time: 1.0, load_index: 0, g_setp: 0, b_setp: 0 },
@@ -331,52 +315,29 @@ function App() {
     noiseParams: {
       loads: {
         enabled: false,
-        magnitude: 0.1,
-        filter_time: 0.1
+        std_dev: 0.01
       },
       generators: {
         enabled: false,
-        magnitude: 0.1,
-        filter_time: 0.1
-      }
-    },
-    pllParams: {
-      enabled: false,
-      pll1: {
-        T_filter: 0.01
+        std_dev: 0.01
       },
-      pll2: {
-        K_p: 100,
-        K_i: 100
-      }
+      filter_time: 0.1
     },
     t_end: 20
   });
   const [tEndInput, setTEndInput] = useState('');
-  const [loadChanges, setLoadChanges] = useState([]);
-  const [simulationParams, setSimulationParams] = useState({
-    t_end: 20,
-    dt: 5e-3,
-    line_outage: parameters.lineOutage,
-    tap_changes: parameters.tapChanger.changes,
-    load_changes: [parameters.step1, parameters.step2],
-    noiseParams: parameters.noiseParams,
-    pllParams: parameters.pllParams
-  });
   const [powerFlows, setPowerFlows] = useState({});
   const [busPower, setBusPower] = useState(null);
-  const [componentViewerOpen, setComponentViewerOpen] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedComponent, setSelectedComponent] = useState(null);
   const [monitoredComponents, setMonitoredComponents] = useState([]);
+  const [islandData, setIslandData] = useState(null);
 
   // Helper to display empty string if tEndInput is empty, otherwise the number
   const tEndInputDisplay = tEndInput === undefined || tEndInput === null || tEndInput === '' ? '' : tEndInput;
 
   // Update network data when line outage parameters change
   useEffect(() => {
-    console.log('Line outages:', parameters.lineOutage.outages); // Debug log
-    
     // Create new links array with fresh objects to avoid reference issues
     const currentLinks = initialNetworkData.links.map(link => ({ ...link }));
 
@@ -421,10 +382,8 @@ function App() {
 
   const handleParameterChange = (step, field, value) => {
     if (step === 't_end') {
-      console.log('Updating t_end to:', value); // Add debug log
       setParameters(prev => {
         const newParams = { ...prev, t_end: value };
-        console.log('New parameters:', newParams); // Add debug log
         return newParams;
       });
       return;
@@ -433,7 +392,11 @@ function App() {
       ...prev,
       [step]: {
         ...prev[step],
-        [field]: field === 'lineId' ? value : (typeof value === 'string' ? parseFloat(value) || 0 : value)
+        [field]: field === 'lineId' ? value : (
+          typeof value === 'string' ? 
+            (value === '' ? 0 : isNaN(parseFloat(value)) ? 0 : parseFloat(value)) 
+            : value
+        )
       }
     }));
   };
@@ -457,7 +420,6 @@ function App() {
             throw new Error('Failed to save parameters');
           }
           const data = await response.json();
-          console.log('Parameters saved:', data);
         } catch (err) {
           setError('Failed to save parameters: ' + err.message);
         }
@@ -501,16 +463,6 @@ function App() {
         baseData[`Transformer ${trafoIdx + 1} Current From [A]`] = formatComplex(current);
         baseData[`Transformer ${trafoIdx + 1} Current To [A]`] = formatComplex(results.trafo_current_to[index][trafoIdx]);
       });
-
-      // Add PLL data if available
-      if (parameters.pllParams.enabled && results.pll1_angle && results.pll2_angle) {
-        results.pll1_angle[index].forEach((angle, pllIdx) => {
-          baseData[`PLL1 Bus ${pllIdx + 1} Angle [deg]`] = (angle * 180/Math.PI).toFixed(3);
-          baseData[`PLL2 Bus ${pllIdx + 1} Angle [deg]`] = (results.pll2_angle[index][pllIdx] * 180/Math.PI).toFixed(3);
-          baseData[`PLL1 Bus ${pllIdx + 1} Frequency [Hz]`] = results.pll1_freq[index][pllIdx].toFixed(3);
-          baseData[`PLL2 Bus ${pllIdx + 1} Frequency [Hz]`] = results.pll2_freq[index][pllIdx].toFixed(3);
-        });
-      }
 
       return baseData;
     });
@@ -619,75 +571,9 @@ function App() {
     }
 
     // === 3. Islands Sheet ===
-    // Use logic from ResultsSection.js
-    const detectIslands = (networkData, lineOutage) => {
-      const busNodes = networkData.nodes.filter(node => node.id?.toString().startsWith('B'));
-      const visited = new Set();
-      const islands = [];
-      const dfs = (nodeId, currentIsland) => {
-        visited.add(nodeId);
-        currentIsland.add(nodeId);
-        networkData.links.forEach(link => {
-          if (link.type !== 'line' && link.type !== 'transformer') return;
-          let isOutaged = false;
-          if (lineOutage?.enabled && lineOutage?.outages) {
-            isOutaged = lineOutage.outages.some(outage => outage.lineId === link.id);
-          }
-          if (isOutaged) return;
-          const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-          const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-          const nextNode = sourceId === nodeId ? targetId : targetId === nodeId ? sourceId : null;
-          if (nextNode && !visited.has(nextNode)) {
-            dfs(nextNode, currentIsland);
-          }
-        });
-      };
-      busNodes.forEach(node => {
-        if (!visited.has(node.id)) {
-          const currentIsland = new Set();
-          dfs(node.id, currentIsland);
-          if (currentIsland.size > 0) {
-            islands.push(currentIsland);
-          }
-        }
-      });
-      if (islands.length === 0 && busNodes.length > 0) {
-        islands.push(new Set(busNodes.map(node => node.id)));
-      }
-      return islands;
-    };
-    const mapGeneratorsToIslands = (islands, networkData) => {
-      const genMapping = {};
-      networkData.links.forEach(link => {
-        if (link.type === 'generator_connection') {
-          const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-          const genId = sourceId.replace('G', '');
-          const targetId = typeof link.target === 'object' ? link.target.id : link.target;
-          islands.forEach((island, idx) => {
-            if (island.has(targetId)) {
-              genMapping[parseInt(genId) - 1] = idx;
-            }
-          });
-        }
-      });
-      return genMapping;
-    };
-    const calculateIslandFrequencies = (islands, genMapping, genSpeeds) => {
-      return islands.map(island => {
-        const islandGens = Object.entries(genMapping)
-          .filter(([_, islandId]) => islandId === islands.indexOf(island))
-          .map(([genId]) => parseInt(genId));
-        const avgSpeed = islandGens.reduce((sum, genId) => {
-          return sum + genSpeeds[genId];
-        }, 0) / islandGens.length;
-        return 50 * (1 + avgSpeed);
-      });
-    };
-    if (results.gen_speed && results.gen_speed.length > 0) {
-      const latestSpeeds = results.gen_speed[results.gen_speed.length - 1];
-      const islands = detectIslands(initialNetworkData, parameters.lineOutage || []);
-      const genMapping = mapGeneratorsToIslands(islands, initialNetworkData);
-      const frequencies = calculateIslandFrequencies(islands, genMapping, latestSpeeds);
+    if (results.gen_speed && results.gen_speed.length > 0 && islandData) {
+      const { islands, genMapping, frequencies } = islandData;
+      
       const islandSheet = [];
       islandSheet.push({
         'Island #': 'Island #',
@@ -773,7 +659,6 @@ function App() {
     setLoading(true);
     setError(null);
     try {
-      console.log('Starting simulation with parameters:', parameters); // Add debug log
       const response = await fetch(`${API_BASE_URL}/start_simulation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -786,9 +671,6 @@ function App() {
         // Handle validation errors from the backend with specific messages
         throw new Error(data.message || 'Failed to start simulation. Please check your parameters.');
       }
-
-      console.log('Simulation started with ID:', data.simulation_id);
-      setSimulationId(data.simulation_id);
 
       // Initialize empty results
       setResults({
@@ -803,10 +685,6 @@ function App() {
         trafo_current_from: [],
         trafo_current_to: [],
         v_angle: [],
-        pll1_angle: [],
-        pll2_angle: [],
-        pll1_freq: [],
-        pll2_freq: [],
         eigenvalues: {
           real: [],
           imag: [],
@@ -824,36 +702,11 @@ function App() {
         const data = JSON.parse(event.data);
         
         if (data.type === 'init') {
-          console.log('Simulation initialized:', data.data);
         } 
         else if (data.type === 'step') {
-          // Log all step data when PLL is enabled
-          if (parameters.pllParams.enabled) {
-            console.log('Step data received:', {
-              time: data.data.t,
-              data_keys: Object.keys(data.data),
-              pll_data: {
-                v_angle: data.data.v_angle,
-                pll1_angle: data.data.pll1_angle,
-                pll2_angle: data.data.pll2_angle,
-                pll1_freq: data.data.pll1_freq,
-                pll2_freq: data.data.pll2_freq
-              }
-            });
-          }
-          
           // Update results with new step data
           setResults(prevResults => {
             const newResults = { ...prevResults };
-            
-            // Initialize arrays if they don't exist
-            if (parameters.pllParams.enabled) {
-              ['v_angle', 'pll1_angle', 'pll2_angle', 'pll1_freq', 'pll2_freq'].forEach(key => {
-                if (!Array.isArray(newResults[key])) {
-                  newResults[key] = [];
-                }
-              });
-            }
             
             // Check if this time point already exists
             const timePoint = data.data.t;
@@ -868,7 +721,6 @@ function App() {
             for (const key in data.data) {
               // Skip undefined or null values
               if (data.data[key] === undefined || data.data[key] === null) {
-                console.warn(`Missing data for '${key}'`);
                 continue;
               }
               
@@ -903,13 +755,11 @@ function App() {
           });
         } 
         else if (data.type === 'error') {
-          console.error('Simulation error:', data.data);
           setError(data.data);
           eventSource.close();
           setLoading(false);
         }
         else if (data.type === 'complete') {
-          console.log('Simulation completed! Final results:', data.data);
           eventSource.close();
           setLoading(false);
           setResults(data.data); // <-- Add this line to update results immediately
@@ -920,23 +770,16 @@ function App() {
               links: prev.links.filter(link => !parameters.lineOutage.outages.some(outage => link.id === outage.lineId))
             }));
           }
-          // Trigger a final fetch of results
-          if (simulationId) {
-            console.log('Triggering final fetch of results after completion...');
-            fetchResultsForDebug(simulationId);
-          }
         }
       };
       
       eventSource.onerror = (error) => {
-        console.error('EventSource error:', error);
         setError('Connection to simulation server lost');
         eventSource.close();
         setLoading(false);
       };
       
     } catch (err) {
-      console.error('Simulation error:', err);
       setError(err.message || 'Failed to run simulation. Please check your parameters.');
       setLoading(false);
     }
@@ -1025,83 +868,10 @@ function App() {
     }));
   };
 
-  // Update the useEffect that fetches simulation results
-  useEffect(() => {
-    if (simulationId) {
-      const fetchResults = async () => {
-        try {
-          console.log('Fetching results for simulation:', simulationId);
-          const response = await fetch(`http://localhost:5000/api/simulation/${simulationId}/results`);
-          if (!response.ok) throw new Error('Failed to fetch results');
-          const data = await response.json();
-          
-          // Process power flow data
-          if (data && data.lines) {
-            console.log('Processing power flow data...');
-            const flows = {};
-            Object.entries(data.lines).forEach(([lineId, lineData]) => {
-              flows[lineId] = {
-                p_from: lineData.p_from || 0,
-                p_to: lineData.p_to || 0,
-                q_from: lineData.q_from || 0,
-                q_to: lineData.q_to || 0
-              };
-            });
-            setPowerFlows(flows);
-            console.log('Power flow data processed:', flows);
-          }
-          
-          setResults(data);
-          setLoading(false);
-          console.log('Simulation completed successfully! Results:', data);
-        } catch (error) {
-          console.error('Error fetching results:', error);
-          setLoading(false);
-        }
-      };
-      fetchResults();
-    }
-  }, [simulationId]);
-
-  // Add a helper function for final fetch and debugging
-  const fetchResultsForDebug = async (simId) => {
-    try {
-      console.log('Final fetch for simulation:', simId);
-      const response = await fetch(`http://localhost:5000/api/simulation/${simId}/results`);
-      if (!response.ok) throw new Error('Failed to fetch results');
-      const data = await response.json();
-      setResults(data);
-      if (data && data.lines) {
-        const flows = {};
-        Object.entries(data.lines).forEach(([lineId, lineData]) => {
-          flows[lineId] = {
-            p_from: lineData.p_from || 0,
-            p_to: lineData.p_to || 0,
-            q_from: lineData.q_from || 0,
-            q_to: lineData.q_to || 0
-          };
-        });
-        setPowerFlows(flows);
-        console.log('Final powerFlows:', flows);
-        // Debug: log networkData.links and getPowerFlowInfo for each link
-        if (networkData && networkData.links) {
-          console.log('Network links:', networkData.links.map(l => l.id));
-          networkData.links.forEach(link => {
-            const info = getPowerFlowInfo(link, flows);
-            console.log(`Link ${link.id}:`, info);
-          });
-        }
-      }
-    } catch (error) {
-      console.error('Error in final fetchResultsForDebug:', error);
-    }
-  };
-
   // Add this effect to update powerFlows only when results.lines is available
   useEffect(() => {
     if (results && results.lines) {
       setPowerFlows(results.lines);
-      console.log('Final power flow analysis matrix:', results.lines);
     }
   }, [results]);
 
@@ -1109,154 +879,8 @@ function App() {
   useEffect(() => {
     if (results && results.bus_power) {
       setBusPower(results.bus_power);
-      console.log('Final bus power injections:', results.bus_power);
     }
   }, [results]);
-
-  // Helper to get the nearest generator P value along the path
-  function getNearestGeneratorP(nodeId, visited = new Set()) {
-    if (visited.has(nodeId)) return 0;
-    visited.add(nodeId);
-    const node = initialNetworkData.nodes.find(n => n.id === nodeId);
-    if (!node) return 0;
-    if (node.id.startsWith('G')) {
-      const idx = initialNetworkData.nodes.findIndex(n => n.id === nodeId);
-      return busPower[idx]?.p ?? 0;
-    }
-    // Find all links connected to this node
-    const connectedLinks = initialNetworkData.links.filter(
-      l => (typeof l.source === 'object' ? l.source.id : l.source) === nodeId ||
-           (typeof l.target === 'object' ? l.target.id : l.target) === nodeId
-    );
-    // Recursively search connected nodes
-    for (const link of connectedLinks) {
-      const otherId = (typeof link.source === 'object' ? link.source.id : link.source) === nodeId
-        ? (typeof link.target === 'object' ? link.target.id : link.target)
-        : (typeof link.source === 'object' ? link.source.id : link.source);
-      const p = getNearestGeneratorP(otherId, visited);
-      if (Math.abs(p) > 1e-4) return p;
-    }
-    return 0;
-  }
-
-  // Helper to get the nearest bus P value along the path (fallback)
-  function getNearestBusP(nodeId, visited = new Set()) {
-    if (visited.has(nodeId)) return 0;
-    visited.add(nodeId);
-    const node = initialNetworkData.nodes.find(n => n.id === nodeId);
-    if (!node) return 0;
-    if (node.id.startsWith('B')) {
-      const idx = initialNetworkData.nodes.findIndex(n => n.id === nodeId);
-      return busPower[idx]?.p ?? 0;
-    }
-    // Find all links connected to this node
-    const connectedLinks = initialNetworkData.links.filter(
-      l => (typeof l.source === 'object' ? l.source.id : l.source) === nodeId ||
-           (typeof l.target === 'object' ? l.target.id : l.target) === nodeId
-    );
-    // Recursively search connected nodes
-    for (const link of connectedLinks) {
-      const otherId = (typeof link.source === 'object' ? link.source.id : link.source) === nodeId
-        ? (typeof link.target === 'object' ? link.target.id : link.target)
-        : (typeof link.source === 'object' ? link.source.id : link.source);
-      const p = getNearestBusP(otherId, visited);
-      if (Math.abs(p) > 1e-4) return p;
-    }
-    return 0;
-  }
-
-  // Helper to check if a power injection is neutral (robust to floating-point noise)
-  const isNeutral = (p) => Math.abs(p) < 1e-4;
-
-  // BFS version: search nearest non-neutral P
-  function getNearestNonNeutralP(nodeId, excludeId) {
-    const queue = [nodeId];
-    const visited = new Set([excludeId]);
-    
-    while (queue.length > 0) {
-      const currentId = queue.shift();
-      if (visited.has(currentId)) continue;
-      visited.add(currentId);
-
-      const nodeIdx = initialNetworkData.nodes.findIndex(n => n.id === currentId);
-      if (nodeIdx === -1) continue;
-      const p = busPower[nodeIdx]?.p ?? 0;
-      if (!isNeutral(p)) return p;  // Found a real generator or load
-
-      // Expand neighbors
-      const connectedLinks = initialNetworkData.links.filter(
-        l => (typeof l.source === 'object' ? l.source.id : l.source) === currentId ||
-             (typeof l.target === 'object' ? l.target.id : l.target) === currentId
-      );
-
-      for (const link of connectedLinks) {
-        const otherId = (typeof link.source === 'object' ? link.source.id : link.source) === currentId
-          ? (typeof link.target === 'object' ? link.target.id : link.target)
-          : (typeof link.source === 'object' ? link.source.id : link.source);
-        if (!visited.has(otherId)) {
-          queue.push(otherId);
-        }
-      }
-    }
-    return null; // No non-neutral found
-  }
-
-  // If both are neutral, walk the network to find the deepest sink/weakest source
-  function findDeepestSinkP(startIdx, excludeIdx) {
-    const visited = new Set([excludeIdx]);
-    const queue = [{ idx: startIdx, prev: null }];
-    let minP = Infinity; // Initialize minimum P found so far
-    let foundNonNeutral = false;
-
-    while (queue.length > 0) {
-      const { idx, prev } = queue.shift();
-      if (visited.has(idx)) continue;
-      visited.add(idx);
-      
-      const p = busPower[idx]?.p ?? 0;
-      
-      if (!isNeutral(p) && p < 0) { // Only consider negative P as sinks
-        minP = Math.min(minP, p);
-        foundNonNeutral = true;
-      }
-      
-      // Add neighbors
-      const nodeId = initialNetworkData.nodes[idx].id;
-      const neighbors = initialNetworkData.links
-        .filter(l => {
-          const sourceId = typeof l.source === 'object' ? l.source.id : l.source;
-          const targetId = typeof l.target === 'object' ? l.target.id : l.target;
-          return (
-            (sourceId === nodeId && !visited.has(initialNetworkData.nodes.findIndex(n => n.id === targetId))) || 
-            (targetId === nodeId && !visited.has(initialNetworkData.nodes.findIndex(n => n.id === sourceId)))
-          );
-        })
-        .map(l =>
-          (typeof l.source === 'object' ? l.source.id : l.source) === nodeId
-            ? initialNetworkData.nodes.findIndex(n => n.id === (typeof l.target === 'object' ? l.target.id : l.target))
-            : initialNetworkData.nodes.findIndex(n => n.id === (typeof l.source === 'object' ? l.source.id : l.source))
-        )
-        .filter(i => i !== -1);
-      
-      neighbors.forEach(neighborIdx => {
-        queue.push({ idx: neighborIdx, prev: idx });
-      });
-    }
-    return foundNonNeutral ? minP : null; // Return min P found, or null if no non-neutral node
-  }
-
-  // Process links so that for dir < 0, source and target are swapped
-  const processedLinks = networkData.links.map(link => {
-    const fromId = typeof link.source === 'object' ? link.source.id : link.source;
-    const toId = typeof link.target === 'object' ? link.target.id : link.target;
-    const fromIdx = initialNetworkData.nodes.findIndex(n => n.id === fromId);
-    const toIdx = initialNetworkData.nodes.findIndex(n => n.id === toId);
-    const dir = getLineFlowDirectionSimple(busPower, fromIdx, toIdx, parameters.lineOutage?.outages?.map(o => o.lineId).filter(Boolean) || []);
-    if (dir < 0) {
-      return { ...link, source: link.target, target: link.source };
-    }
-    return link;
-  });
 
   return (
     <Container maxWidth="xl">
@@ -1346,7 +970,6 @@ function App() {
               }
             }}
             InputProps={{
-              disableUnderline: true,
               sx: {
                 height: 48,
                 minHeight: 48,
@@ -1421,6 +1044,12 @@ function App() {
                 handleAddLineOutage={handleAddLineOutage}
                 handleRemoveTapChange={handleRemoveTapChange}
                 handleAddTapChange={handleAddTapChange}
+                saveParameters={saveParameters}
+                handleStartSimulation={handleStartSimulation}
+                downloadExcel={downloadExcel}
+                loading={loading}
+                results={results}
+                error={error}
               />
             </Grid>
           </Grid>
@@ -1433,11 +1062,11 @@ function App() {
           parameters={parameters}
           initialNetworkData={initialNetworkData}
           busPower={results.bus_power}
-          getLineFlowDirectionSimple={(fromIdx, toIdx) => getLineFlowDirectionSimple(busPower, fromIdx, toIdx, parameters.lineOutage?.outages?.map(o => o.lineId).filter(Boolean) || [])}
           monitoredComponents={monitoredComponents}
           onRemoveComponent={(id) => {
             setMonitoredComponents(prev => prev.filter(comp => comp.id !== id));
           }}
+          exportIslandData={setIslandData}
         />
       )}
     </Container>

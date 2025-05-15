@@ -291,18 +291,6 @@ const FocusedComponentPlots = ({ results, monitoredComponents, initialNetworkDat
                                       busIdx >= 0 && 
                                       busIdx < results.v_angle[0].length;
             
-            const hasPllData = results.pll1_freq && 
-                              Array.isArray(results.pll1_freq) && 
-                              results.pll1_freq.length > 0 && 
-                              Array.isArray(results.pll1_freq[0]) &&
-                              results.pll2_freq && 
-                              Array.isArray(results.pll2_freq) && 
-                              results.pll2_freq.length > 0 && 
-                              Array.isArray(results.pll2_freq[0]) &&
-                              busIdx >= 0 && 
-                              busIdx < results.pll1_freq[0].length &&
-                              busIdx < results.pll2_freq[0].length;
-            
             return (
               <Grid item xs={12} key={component.id}>
                 <Paper elevation={2} sx={{ p: 2, position: 'relative' }}>
@@ -362,40 +350,6 @@ const FocusedComponentPlots = ({ results, monitoredComponents, initialNetworkDat
                         <Typography>No voltage data available for this bus</Typography>
                       )}
                     </Grid>
-                    
-                    {/* PLL Plots if PLL is enabled */}
-                    {hasPllData && (
-                      <Grid item xs={12} md={6}>
-                        <Plot
-                          data={[
-                            {
-                              x: results.t,
-                              y: results.pll1_freq.map(freqs => freqs[busIdx]),
-                              type: 'scatter',
-                              mode: 'lines',
-                              name: 'PLL1 Frequency',
-                              line: { color: '#2ecc71', width: 2 }
-                            },
-                            {
-                              x: results.t,
-                              y: results.pll2_freq.map(freqs => freqs[busIdx]),
-                              type: 'scatter',
-                              mode: 'lines',
-                              name: 'PLL2 Frequency',
-                              line: { color: '#3498db', width: 2, dash: 'dash' }
-                            }
-                          ]}
-                          layout={{
-                            ...defaultPlotLayout,
-                            title: { text: 'Bus PLL Frequency' },
-                            xaxis: { title: { text: 't [s]' }, autorange: true },
-                            yaxis: { title: { text: 'f [Hz]' }, autorange: true }
-                          }}
-                          config={{ responsive: true, displaylogo: false }}
-                          style={{ width: '100%', height: '300px' }}
-                        />
-                      </Grid>
-                    )}
                   </Grid>
                 </Paper>
               </Grid>

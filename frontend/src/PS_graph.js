@@ -6,17 +6,6 @@ import {
 } from '@mui/material';
 import ForceGraph2D from 'react-force-graph-2d';
 
-// Helper function to format complex numbers
-const formatComplex = (value) => {
-  if (value && typeof value === 'object' && 'real' in value && 'imag' in value) {
-    const real = value.real.toFixed(3);
-    const imag = Math.abs(value.imag).toFixed(3);
-    const sign = value.imag >= 0 ? '+' : '-';
-    return `${real} ${sign} ${imag}j`;
-  }
-  return typeof value === 'number' ? value.toFixed(3) : '0.000';
-};
-
 // Helper: interpolate between two colors
 function interpolateColor(color1, color2, t) {
   const c1 = color1.match(/\w\w/g).map(x => parseInt(x, 16));
@@ -78,8 +67,6 @@ const isSelectable = (node) => {
   }
   return false;
 };
-
-const isLinkSelectable = () => false;
 
 const PS_graph = ({ 
   graphRef,
@@ -248,12 +235,6 @@ const PS_graph = ({
               const radius = (selectionMode && node === hoveredNode && isSelectable(node)) || isSelected ? 14 : 10;
               const fontSize = 16 / globalScale;
 
-              // --- Debugging Logs --- 
-              if (node.id === 'B8') { // Log specifically for B8 or another bus you select
-                console.log(`Node: ${node.id}, Is SC Bus? ${isShortCircuitBus}, SC Bus ID Prop: ${shortCircuitBusId}`);
-              }
-              // --- End Debugging Logs ---
-
               // Check if this is the short-circuited bus
               if (isShortCircuitBus) {
                 // Draw Warning Triangle
@@ -352,7 +333,6 @@ const PS_graph = ({
               return dir > 0 ? 0.01 : dir < 0 ? -0.01 : 0;
             }}
             linkLabel={link => {
-              if (selectionMode && isLinkSelectable(link)) return `Click to select: Line ${link.id}`;
               const flowInfo = getPowerFlowInfo(link, powerFlows);
               if (flowInfo) {
                 const flow = powerFlows[link.id];

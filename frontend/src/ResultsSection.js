@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Grid, 
   Paper, 
@@ -21,6 +21,29 @@ import {
 import Plot from 'react-plotly.js';
 import FocusedComponentPlots from './FocusedComponentPlots';
 
+// Common colors for plots
+const plotColors = {
+  buses: [
+    '#e41a1c', // red
+    '#377eb8', // blue
+    '#4daf4a', // green
+    '#984ea3', // purple
+    '#ff7f00', // orange
+    '#a65628', // brown
+    '#f781bf', // pink
+    '#ffff33', // yellow
+    '#999999', // grey
+    '#a6cee3', // light blue
+    '#fb9a99'  // light red
+  ],
+  gauge: {
+    normal: 'rgb(46, 213, 115)',     // Green
+    warning: 'rgb(255, 165, 2)',     // Orange
+    danger: 'rgb(235, 77, 75)',      // Red
+    background: '#f5f6fa',           // Light gray
+    text: '#2f3640'                  // Dark gray
+  }
+};
 
 // Default plot layout configuration
 const defaultPlotLayout = {
@@ -165,8 +188,8 @@ const PowerInjectionsPlot = ({
   initialNetworkData,
   defaultPlotLayout
 }) => {
-  const [selectedBuses, setSelectedBuses] = React.useState([]); 
-  const [plotKey, setPlotKey] = React.useState(0);
+  const [selectedBuses, setSelectedBuses] = useState([]); 
+  const [plotKey, setPlotKey] = useState(0);
   
   const handleBusChange = (event) => {
     const { target: { value } } = event;
@@ -188,21 +211,6 @@ const PowerInjectionsPlot = ({
     }
     return { real: 0, imag: 0 };
   });
-
-  // Define a color palette for the 11 buses
-  const busColors = [
-    '#e41a1c', // red
-    '#377eb8', // blue
-    '#4daf4a', // green
-    '#984ea3', // purple
-    '#ff7f00', // orange
-    '#a65628', // brown
-    '#f781bf', // pink
-    '#ffff33', // yellow
-    '#999999', // grey
-    '#a6cee3', // light blue
-    '#fb9a99'  // light red
-  ];
 
   // Create filtered list of bus nodes (B1-B11)
   const busNodes = initialNetworkData.nodes.filter(node => 
@@ -253,10 +261,10 @@ const PowerInjectionsPlot = ({
       marker: {
         size: 12,
         symbol: 'circle-open',
-        color: busColors[originalIndex % busColors.length],
+        color: plotColors.buses[originalIndex % plotColors.buses.length],
         line: {
           width: 2,
-          color: busColors[originalIndex % busColors.length]
+          color: plotColors.buses[originalIndex % plotColors.buses.length]
         }
       },
       text: node.id,
@@ -280,7 +288,7 @@ const PowerInjectionsPlot = ({
       marker: {
         size: 12,
         symbol: 'circle',
-        color: busColors[originalIndex % busColors.length]
+        color: plotColors.buses[originalIndex % plotColors.buses.length]
       },
       text: node.id,
       hovertemplate: '%{text} (Final): %{x:.2f} + %{y:.2f}j<extra></extra>'
@@ -376,7 +384,7 @@ const PowerInjectionsPlot = ({
                     width: 12, 
                     height: 12, 
                     borderRadius: '50%', 
-                    bgcolor: busColors[busNodes.findIndex(n => n.id === node.id)] 
+                    bgcolor: plotColors.buses[busNodes.findIndex(n => n.id === node.id)] 
                   }}/>
                   <ListItemText primary={node.id} />
                 </Box>
@@ -452,38 +460,29 @@ const ResultsSection = ({
   parameters, 
   initialNetworkData, 
   busPower,
-  getLineFlowDirectionSimple,
   monitoredComponents,
-  onRemoveComponent
+  onRemoveComponent,
+  exportIslandData
 }) => {
-  const [islandFrequencyTimeSeries, setIslandFrequencyTimeSeries] = React.useState(null);
-  const [islandInfo, setIslandInfo] = React.useState([]); // To store island details for legend/labels
-
-  // Add logging effect at top level
-  React.useEffect(() => {
-    if (results?.gen_speed && results.gen_speed[0]) {
-      const latestSpeeds = results.gen_speed[results.gen_speed.length - 1];
-      const islands = detectIslands(initialNetworkData, parameters.lineOutage || []);
-      const genMapping = mapGeneratorsToIslands(islands, initialNetworkData);
-      const frequencies = calculateIslandFrequencies(islands, genMapping, latestSpeeds);
-
-      console.log('System state:', {
-        islands: islands.map((island, idx) => ({
-          buses: Array.from(island),
-          generators: Object.entries(genMapping)
-            .filter(([_, islandId]) => islandId === idx)
-            .map(([genId]) => `G${parseInt(genId) + 1}`),
-          frequency: frequencies[idx].toFixed(3)
-        }))
-      });
-    }
-  }, [results?.gen_speed, parameters?.lineOutage, initialNetworkData]);
+  const [islandFrequencyTimeSeries, setIslandFrequencyTimeSeries] = useState(null);
+  const [islandInfo, setIslandInfo] = useState([]); // To store island details for legend/labels
 
   // Effect to calculate island frequency time series
-  React.useEffect(() => {
+  useEffect(() => {
     if (results?.gen_speed && Array.isArray(results.gen_speed) && results.gen_speed.length > 0 && initialNetworkData) {
       const islands = detectIslands(initialNetworkData, parameters.lineOutage || null);
       const genMapping = mapGeneratorsToIslands(islands, initialNetworkData);
+      
+      // Make island data available for App.js when needed
+      if (exportIslandData && typeof exportIslandData === 'function') {
+        const latestSpeeds = results.gen_speed[results.gen_speed.length - 1];
+        const frequencies = calculateIslandFrequencies(islands, genMapping, latestSpeeds);
+        exportIslandData({
+          islands,
+          genMapping,
+          frequencies
+        });
+      }
       
       const timeSeries = islands.map(() => []); // Initialize an array for each island
       
@@ -515,7 +514,7 @@ const ResultsSection = ({
       setIslandFrequencyTimeSeries(null);
       setIslandInfo([]);
     }
-  }, [results?.gen_speed, initialNetworkData, parameters.lineOutage]);
+  }, [results?.gen_speed, initialNetworkData, parameters.lineOutage, exportIslandData]);
 
   if (!results) return null;
 
@@ -564,15 +563,6 @@ const ResultsSection = ({
 
                 // Calculate current frequencies for each island
                 const frequencies = calculateIslandFrequencies(islands, genMapping, latestSpeeds);
-
-                // Define colors for gauge zones
-                const colors = {
-                  normal: 'rgb(46, 213, 115)',     // Green
-                  warning: 'rgb(255, 165, 2)',     // Orange
-                  danger: 'rgb(235, 77, 75)',      // Red
-                  background: '#f5f6fa',           // Light gray
-                  text: '#2f3640'                  // Dark gray
-                };
 
                 // Calculate layout dimensions based on number of islands
                 const numIslands = frequencies.length;
@@ -625,13 +615,13 @@ const ResultsSection = ({
                     value: freq,
                     title: {
                       text: `Island ${idx + 1}<br>Generators: ${islandGens}`,
-                      font: { size: 16, color: colors.text }
+                      font: { size: 16, color: plotColors.gauge.text }
                     },
                     gauge: {
                       axis: {
                         range: [tempMinFreq, tempMaxFreq],
                         tickwidth: 2,
-                        tickcolor: colors.text,
+                        tickcolor: plotColors.gauge.text,
                         tickmode: 'array',
                         tickvals: showFineTicks
                           ? [tempMinFreq, 49.9, 50, 50.1, tempMaxFreq]
@@ -641,19 +631,19 @@ const ResultsSection = ({
                           : [tempMinFreq.toFixed(1), '50.0', tempMaxFreq.toFixed(1)],
                         tickfont: { size: 12 }
                       },
-                      bar: { color: colors.text },
-                      bgcolor: colors.background,
+                      bar: { color: plotColors.gauge.text },
+                      bgcolor: plotColors.gauge.background,
                       borderwidth: 2,
-                      bordercolor: colors.text,
+                      bordercolor: plotColors.gauge.text,
                       steps: [
-                        { range: [tempMinFreq, 49.9], color: colors.danger },
-                        { range: [49.9, 49.91], color: colors.warning },
-                        { range: [49.91, 50.09], color: colors.normal },
-                        { range: [50.09, 50.1], color: colors.warning },
-                        { range: [50.1, tempMaxFreq], color: colors.danger }
+                        { range: [tempMinFreq, 49.9], color: plotColors.gauge.danger },
+                        { range: [49.9, 49.91], color: plotColors.gauge.warning },
+                        { range: [49.91, 50.09], color: plotColors.gauge.normal },
+                        { range: [50.09, 50.1], color: plotColors.gauge.warning },
+                        { range: [50.1, tempMaxFreq], color: plotColors.gauge.danger }
                       ],
                       threshold: {
-                        line: { color: colors.text, width: 4 },
+                        line: { color: plotColors.gauge.text, width: 4 },
                         thickness: 0.75,
                         value: freq
                       }
@@ -666,7 +656,7 @@ const ResultsSection = ({
                 const layout = {
                   title: {
                     text: 'System Frequencies',
-                    font: { size: 24, color: colors.text },
+                    font: { size: 24, color: plotColors.gauge.text },
                     y: 0.95,
                     yanchor: 'top'
                   },
@@ -779,61 +769,7 @@ const ResultsSection = ({
             </div>
           </Grid>
 
-          {/* 4. Bus Voltage Angles Plot */}
-          {/* <Grid item xs={12} md={6}>
-            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
-              {results?.v_angle && Array.isArray(results.v_angle) && results.v_angle.length > 0 && Array.isArray(results.v_angle[0]) ? (
-                <Plot
-                  data={results.v_angle[0].map((_, busIdx) => ({
-                    type: 'scatter',
-                    mode: 'lines',
-                    name: `Bus ${busIdx + 1}`,
-                    x: results.t,
-                    y: results.v_angle.map(angles => angles[busIdx]),
-                    line: { 
-                      color: [
-                        '#e41a1c',  // red
-                        '#377eb8',  // blue
-                        '#4daf4a',  // green
-                        '#984ea3',  // purple
-                        '#ff7f00',  // orange
-                        '#a65628',  // brown
-                        '#f781bf',  // pink
-                        '#999999'   // grey
-                      ][busIdx % 8],
-                      width: 2
-                    }
-                  }))}
-                  layout={{
-                    ...defaultPlotLayout,
-                    title: {
-                      text: 'Bus Voltage Angles',
-                      font: { size: 24 },
-                      y: 0.95
-                    },
-                    xaxis: { ...defaultPlotLayout.xaxis, title: { text: 't [s]' }, autorange: true },
-                    yaxis: { ...defaultPlotLayout.yaxis, title: { text: 'θ [°]' }, autorange: true },
-                    showlegend: true,
-                    legend: {
-                      x: 1.1,
-                      y: 1
-                    },
-                    margin: { t: 50, r: 100, b: 50 }
-                  }}
-                  config={{
-                    responsive: true,
-                    displayModeBar: true,
-                    displaylogo: false
-                  }}
-                  style={{ width: '100%', height: '400px' }}
-                />
-              ) : (
-                <div>No voltage angle data available</div>
-              )}
-            </div>
-          </Grid> */}
-
-          {/* 5. Bus Voltage Phasors Plot */}
+          {/* 4. Bus Voltage Phasors Plot */}
           <Grid item xs={12} md={6}>
             <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
               {results?.v && results.v[0] ? (
@@ -853,16 +789,7 @@ const ResultsSection = ({
                       theta: [0, angle * 180 / Math.PI],  // Convert to degrees for plotly
                       marker: { size: 8 },
                       line: { 
-                        color: [
-                          '#e41a1c',  // red
-                          '#377eb8',  // blue
-                          '#4daf4a',  // green
-                          '#984ea3',  // purple
-                          '#ff7f00',  // orange
-                          '#a65628',  // brown
-                          '#f781bf',  // pink
-                          '#999999'   // grey
-                        ][busIdx % 8],
+                        color: plotColors.buses[busIdx % plotColors.buses.length],
                         width: 2
                       }
                     };
@@ -915,7 +842,7 @@ const ResultsSection = ({
             </div>
           </Grid>
           
-          {/* 6. Generator Speeds Plot */}
+          {/* 5. Generator Speeds Plot */}
           <Grid item xs={12} md={6}>
             <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
               {results?.gen_speed && results.gen_speed[0] ? (
@@ -953,7 +880,7 @@ const ResultsSection = ({
             </div>
           </Grid>
           
-          {/* 7. Generator Current Plot */}
+          {/* 6. Generator Current Plot */}
           <Grid item xs={12} md={6}>
             <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
               {results && results.gen_I && results.gen_I[0] ? (
@@ -988,7 +915,7 @@ const ResultsSection = ({
             </div>
           </Grid>
 
-          {/* 8. Load Active Power Plot */}
+          {/* 7. Load Active Power Plot */}
           <Grid item xs={12} md={6}>
             <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
               {results && results.load_P && results.load_P[0] ? (
@@ -1024,7 +951,7 @@ const ResultsSection = ({
             </div>
           </Grid>
 
-          {/* 9. Load Reactive Power Plot */}
+          {/* 8. Load Reactive Power Plot */}
           <Grid item xs={12} md={6}>
             <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
               {results && results.load_Q && results.load_Q[0] ? (
@@ -1064,7 +991,7 @@ const ResultsSection = ({
             </div>
           </Grid>
 
-          {/* 10. Load Current Plot */}
+          {/* 9. Load Current Plot */}
           <Grid container spacing={2}>
             <Grid item xs={12} md={6}>
               <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
@@ -1145,108 +1072,6 @@ const ResultsSection = ({
               </div>
             </Grid>
           </Grid>
-
-          {/* 12 & 13. PLL Plots (Conditional) */}
-          {parameters.pllParams.enabled && (
-            <>
-              <Grid item xs={12} md={6}>
-                <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
-                  {Array.isArray(results.v_angle) && Array.isArray(results.pll1_angle) && Array.isArray(results.pll2_angle) && results.v_angle.length > 0 ? (
-                    <Plot
-                      data={[
-                        {
-                          x: results.t,
-                          y: results.v_angle.map(angles => Array.isArray(angles) ? angles[0] * (180/Math.PI) : angles * (180/Math.PI)),
-                          type: 'scatter',
-                          mode: 'lines',
-                          name: 'Voltage Angle',
-                          line: { color: '#2196f3' }
-                        },
-                        {
-                          x: results.t,
-                          y: results.pll1_angle.map(angles => Array.isArray(angles) ? angles[0] * (180/Math.PI) : angles * (180/Math.PI)),
-                          type: 'scatter',
-                          mode: 'lines',
-                          name: 'PLL1 Angle',
-                          line: { color: '#4caf50' }
-                        },
-                        {
-                          x: results.t,
-                          y: results.pll2_angle.map(angles => Array.isArray(angles) ? angles[0] * (180/Math.PI) : angles * (180/Math.PI)),
-                          type: 'scatter',
-                          mode: 'lines',
-                          name: 'PLL2 Angle',
-                          line: { color: '#ff9800' }
-                        }
-                      ]}
-                      layout={{
-                        ...defaultPlotLayout,
-                        title: {
-                          text: 'PLL Angles',
-                          font: { size: 24 },
-                          y: 0.95
-                        },
-                        xaxis: { ...defaultPlotLayout.xaxis, title: { text: 't [s]' }, autorange: true },
-                        yaxis: { ...defaultPlotLayout.yaxis, title: { text: 'θ [°]' }, autorange: true },
-                      }}
-                      config={{
-                        responsive: true,
-                        displayModeBar: true,
-                        displaylogo: false
-                      }}
-                      style={{ width: '100%', height: '400px' }}
-                    />
-                  ) : (
-                    <Typography>Waiting for PLL angle data...</Typography>
-                  )}
-                </div>
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
-                  {Array.isArray(results.pll1_freq) && Array.isArray(results.pll2_freq) && results.pll1_freq.length > 0 ? (
-                    <Plot
-                      data={[
-                        {
-                          x: results.t,
-                          y: results.pll1_freq.map(f => Array.isArray(f) ? f[0] : f),
-                          type: 'scatter',
-                          mode: 'lines',
-                          name: 'PLL1 Frequency',
-                          line: { color: '#4caf50' }
-                        },
-                        {
-                          x: results.t,
-                          y: results.pll2_freq.map(f => Array.isArray(f) ? f[0] : f),
-                          type: 'scatter',
-                          mode: 'lines',
-                          name: 'PLL2 Frequency',
-                          line: { color: '#ff9800' }
-                        }
-                      ]}
-                      layout={{
-                        ...defaultPlotLayout,
-                        title: {
-                          text: 'PLL Frequencies',
-                          font: { size: 24 },
-                          y: 0.95
-                        },
-                        xaxis: { ...defaultPlotLayout.xaxis, title: { text: 't [s]' }, autorange: true },
-                        yaxis: { ...defaultPlotLayout.yaxis, title: { text: 'f [Hz]' }, autorange: true },
-                      }}
-                      config={{
-                        responsive: true,
-                        displayModeBar: true,
-                        displaylogo: false
-                      }}
-                      style={{ width: '100%', height: '400px' }}
-                    />
-                  ) : (
-                    <Typography>Waiting for PLL frequency data...</Typography>
-                  )}
-                </div>
-              </Grid>
-            </>
-          )}
 
         </Grid>
       </Paper>
@@ -1353,13 +1178,7 @@ const ResultsSection = ({
                             mode: 'lines+markers',
                             marker: { size: 8 },
                             line: { 
-                              // Use TOPS' Set1 colormap colors
-                              color: [
-                                '#e41a1c',  // red
-                                '#377eb8',  // blue
-                                '#4daf4a',  // green
-                                '#984ea3',  // purple
-                              ][genIdx],
+                              color: plotColors.buses[genIdx % 4], // Use first 4 colors
                               width: 2
                             },
                             name: `Gen ${genIdx + 1}`,
@@ -1454,75 +1273,7 @@ const ResultsSection = ({
         </Paper>
       )}
 
-      {/* Line Power Flow Checklist Table */}
-      {/* {busPower && busPower.length > 0 && (
-        <Paper sx={{ p: 3, mb: 3 }}>
-          <Typography variant="h6" gutterBottom sx={{ color: 'secondary.main' }}>Power Flow Directions</Typography>
-          <TableContainer>
-            <Table size="small">
-              <TableHead>
-                <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
-                  <TableCell>Line</TableCell>
-                  <TableCell>From Bus</TableCell>
-                  <TableCell>To Bus</TableCell>
-                  <TableCell align="right">From Bus P (MW)</TableCell>
-                  <TableCell align="right">To Bus P (MW)</TableCell>
-                  <TableCell align="center">Direction</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {initialNetworkData.links.filter(l => l.type === 'line' || l.type === 'transformer').map((link, idx) => {
-                  const fromId = typeof link.source === 'object' ? link.source.id : link.source;
-                  const toId = typeof link.target === 'object' ? link.target.id : link.target;
-                  const fromIdx = initialNetworkData.nodes.findIndex(n => n.id === fromId);
-                  const toIdx = initialNetworkData.nodes.findIndex(n => n.id === toId);
-                  const fromP = busPower[fromIdx]?.p ?? 0;
-                  const toP = busPower[toIdx]?.p ?? 0;
-                  const dir = getLineFlowDirectionSimple(fromIdx, toIdx);
-                  let dirText = '-';
-                  if (dir > 0) dirText = `towards bus ${toId}`;
-                  else if (dir < 0) dirText = `towards bus ${fromId}`;
-                  return (
-                    <TableRow key={link.id || idx} sx={{ '&:nth-of-type(odd)': { backgroundColor: '#fafafa' } }}>
-                      <TableCell>{link.id || `${fromId}-${toId}`}</TableCell>
-                      <TableCell>{fromId}</TableCell>
-                      <TableCell>{toId}</TableCell>
-                      <TableCell align="right">{fromP.toFixed(3)}</TableCell>
-                      <TableCell align="right">{toP.toFixed(3)}</TableCell>
-                      <TableCell align="center">{dirText}</TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </Paper>
-      )} */}
 
-      {/* Raw Bus Power Data */}
-      {/* {results && results.bus_power_raw && (
-        <Paper sx={{ p: 3, mb: 3 }}>
-          <Typography variant="h6" gutterBottom sx={{ color: 'secondary.main' }}>Bus Power Injections (Raw)</Typography>
-          <TableContainer>
-            <Table size="small">
-              <TableHead>
-                <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
-                  <TableCell>Bus</TableCell>
-                  <TableCell>Injection (complex)</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {results.bus_power_raw.map((val, idx) => (
-                  <TableRow key={idx} sx={{ '&:nth-of-type(odd)': { backgroundColor: '#fafafa' } }}>
-                    <TableCell>{initialNetworkData.nodes[idx]?.id || idx + 1}</TableCell>
-                    <TableCell>{val}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </Paper>
-      )} */}
     </>
   );
 };
