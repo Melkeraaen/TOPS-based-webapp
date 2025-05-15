@@ -548,7 +548,12 @@ const ResultsSection = ({
 
           {/* 1. Frequency Gauge Plot */}
           <Grid item xs={12} md={6}>
-            <div style={{ backgroundColor: '#ffffff', padding: '10px' }}>
+            <div style={{
+              backgroundColor: '#ffffff',
+              padding: '30px 30px 40px 30px', // top, right, bottom, left
+              margin: '0 20px 30px 20px',     // top, right, bottom, left
+              borderRadius: '16px'            // optional: makes it look nicer
+            }}>
               {results?.gen_speed && results.gen_speed[0] ? (() => {
                 // Get latest generator speeds
                 const latestSpeeds = results.gen_speed[results.gen_speed.length - 1];
@@ -578,9 +583,10 @@ const ResultsSection = ({
                   if (isHorizontal) {
                     // Arrange horizontally
                     const width = 1 / numIslands;
+                    const gap = 0.12; // try 0.08 for a bigger gap
                     return {
-                      x: [idx * width, (idx + 1) * width - 0.05], // Leave small gap between gauges
-                      y: [0, 0.85] // Leave room for title at top
+                      x: [idx * width, (idx + 1) * width - gap],
+                      y: [0, 0.85]
                     };
                   } else {
                     // Arrange vertically
@@ -594,8 +600,12 @@ const ResultsSection = ({
 
                 // Calculate maxAbsDev for symmetric scaling around 50 Hz
                 let maxAbsDev = 0.2;
+                let showFineTicks = true; // default value
                 if (results?.gen_speed && Array.isArray(results.gen_speed)) {
                   const allFreqs = results.gen_speed.flat().map(s => 50 * (1 + s));
+                  const maxFreqEver = Math.max(...allFreqs);
+                  const minFreqEver = Math.min(...allFreqs);
+                  showFineTicks = !(maxFreqEver > 50.3 || minFreqEver < 49.7);
                   maxAbsDev = Math.max(0.2, ...allFreqs.map(f => Math.abs(f - 50)));
                 }
                 const tempMinFreq = 50 - maxAbsDev;
@@ -623,8 +633,12 @@ const ResultsSection = ({
                         tickwidth: 2,
                         tickcolor: colors.text,
                         tickmode: 'array',
-                        tickvals: [tempMinFreq, 49.9, 50, 50.1, tempMaxFreq],
-                        ticktext: [tempMinFreq.toFixed(1), '49.9', '50.0', '50.1', tempMaxFreq.toFixed(1)],
+                        tickvals: showFineTicks
+                          ? [tempMinFreq, 49.9, 50, 50.1, tempMaxFreq]
+                          : [tempMinFreq, 50, tempMaxFreq],
+                        ticktext: showFineTicks
+                          ? [tempMinFreq.toFixed(1), '49.9', '50.0', '50.1', tempMaxFreq.toFixed(1)]
+                          : [tempMinFreq.toFixed(1), '50.0', tempMaxFreq.toFixed(1)],
                         tickfont: { size: 12 }
                       },
                       bar: { color: colors.text },

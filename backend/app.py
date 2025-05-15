@@ -248,7 +248,7 @@ def run_simulation_thread(sim_params):
         })
 
         # Run complete simulation
-        while sol.t < sol.t_end:
+        while sol.t <= sol.t_end:
             # Only apply load changes if they are non-zero, otherwise keep initial values
             if sim_parameters['step1']['time'] <= sol.t:
                 g_setp = sim_parameters['step1']['g_setp']
