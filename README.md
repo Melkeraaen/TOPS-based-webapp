@@ -1,6 +1,6 @@
 # TOPS Web Application
 
-A web-based interface for TOPS (Time-domain Open-source Power System) simulator.
+A web-based interface for TOPS (Tiny Open Power System Simulator).
 
 ## Features
 
@@ -13,7 +13,6 @@ A web-based interface for TOPS (Time-domain Open-source Power System) simulator.
   - Short circuits
   - Tap changer control
   - Generator control (AVR & Governor)
-  - PLL analysis
 
 ## Structure
 
