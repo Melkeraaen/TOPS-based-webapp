@@ -266,6 +266,8 @@ function App() {
   const [error, setError] = useState(null);
   const [networkData, setNetworkData] = useState(initialNetworkData);
   const [graphWidth, setGraphWidth] = useState(window.innerWidth * 0.8);
+  const [simulationStartTime, setSimulationStartTime] = useState(null);
+  const [simulationDuration, setSimulationDuration] = useState(null);
   const [parameters, setParameters] = useState({
     step1: { time: 1.0, load_index: 0, g_setp: 0, b_setp: 0 },
     step2: { time: 2.0, load_index: 0, g_setp: 0, b_setp: 0 },
@@ -623,6 +625,9 @@ function App() {
   const handleStartSimulation = async () => {
     setLoading(true);
     setError(null);
+    const startTime = performance.now();
+    setSimulationStartTime(startTime);
+    setSimulationDuration(null);
     try {
       const response = await fetch(`${API_BASE_URL}/start_simulation`, {
         method: 'POST',
@@ -633,7 +638,6 @@ function App() {
       const data = await response.json();
       
       if (!response.ok) {
-        // Handle validation errors from the backend with specific messages
         throw new Error(data.message || 'Failed to start simulation. Please check your parameters.');
       }
 
@@ -666,40 +670,16 @@ function App() {
       eventSource.onmessage = (event) => {
         const data = JSON.parse(event.data);
         
-        if (data.type === 'init') {
-        } 
-        else if (data.type === 'step') {
-          // Update results with new step data
+        if (data.type === 'step') {
           setResults(prevResults => {
             const newResults = { ...prevResults };
             
-            // Check if this time point already exists
-            const timePoint = data.data.t;
-            const existingTimeIndex = newResults.t ? newResults.t.indexOf(timePoint) : -1;
-            
-            if (existingTimeIndex !== -1) {
-              // Skip this update as we already have data for this time point
-              return newResults;
-            }
-            
-            // Append new data to each array
+            // Add new data point
             for (const key in data.data) {
-              // Skip undefined or null values
-              if (data.data[key] === undefined || data.data[key] === null) {
-                continue;
+              if (!newResults[key]) {
+                newResults[key] = [];
               }
-              
-              if (Array.isArray(newResults[key])) {
-                newResults[key].push(data.data[key]);
-              } else if (key === 't') {
-                // Special handling for time array
-                if (!Array.isArray(newResults[key])) {
-                  newResults[key] = [];
-                }
-                newResults[key].push(data.data[key]);
-              } else {
-                newResults[key] = data.data[key];
-              }
+              newResults[key].push(data.data[key]);
             }
             
             // Sort data by time to ensure correct plotting
@@ -723,11 +703,20 @@ function App() {
           setError(data.data);
           eventSource.close();
           setLoading(false);
+          const endTime = performance.now();
+          const duration = (endTime - startTime) / 1000;
+          setSimulationDuration(duration);
         }
         else if (data.type === 'complete') {
           eventSource.close();
           setLoading(false);
-          setResults(data.data); // <-- Add this line to update results immediately
+          setResults(data.data);
+          // Calculate and set simulation duration
+          const endTime = performance.now();
+          const duration = (endTime - startTime) / 1000; // Convert to seconds
+          setSimulationDuration(duration);
+          console.log(`Simulation completed in ${duration.toFixed(2)} seconds`);
+          
           // Remove the outaged line after simulation completes
           if (parameters.lineOutage.outages.length > 0) {
             setNetworkData(prev => ({
@@ -742,11 +731,17 @@ function App() {
         setError('Connection to simulation server lost');
         eventSource.close();
         setLoading(false);
+        const endTime = performance.now();
+        const duration = (endTime - startTime) / 1000;
+        setSimulationDuration(duration);
       };
       
     } catch (err) {
       setError(err.message || 'Failed to run simulation. Please check your parameters.');
       setLoading(false);
+      const endTime = performance.now();
+      const duration = (endTime - startTime) / 1000;
+      setSimulationDuration(duration);
     }
   };
 
