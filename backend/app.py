@@ -91,6 +91,9 @@ def run_simulation_thread(sim_params):
         simulation_state['running'] = True
         print("\nSimulation parameters:", json.dumps(sim_params, indent=2))
         
+        # Start timing the simulation
+        start_time = time.time()
+        
         # model loading and initialization
         
         print("\n=== Loading model ===")
@@ -478,6 +481,11 @@ def run_simulation_thread(sim_params):
         # ---------------------------------------------------------------
         # FINALIZE SIMULATION
         # ---------------------------------------------------------------
+        
+        # Calculate and print total simulation time
+        end_time = time.time()
+        total_time = end_time - start_time
+        print(f"\nSimulation completed in {total_time:.2f} seconds")
         
         # Store final results
         simulation_state['results'] = dict(serializable_results)
