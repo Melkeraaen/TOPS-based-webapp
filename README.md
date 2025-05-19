@@ -81,3 +81,5 @@ The application consists of two main parts:
 4. Results are sent back to frontend
 5. Frontend displays the results in interactive visualizations
 
+## Bugs
+Note: This is a development build served as a port of bachelor thesis, some bugs should be expected :D
