@@ -323,9 +323,9 @@ def run_simulation_thread(sim_params):
                 line_id = line.name if hasattr(line, 'name') else f"L{i+1}"
                 lines_power[line_id] = {
                     'p_from': float(np.real(line.p_from(sol.x, sol.v)[i])),
-                    'q_from': float(np.imag(line.q_from(sol.x, sol.v)[i])),
+                    'q_from': float(np.real(line.q_from(sol.x, sol.v)[i])),
                     'p_to': float(np.real(line.p_to(sol.x, sol.v)[i])),
-                    'q_to': float(np.imag(line.q_to(sol.x, sol.v)[i]))
+                    'q_to': float(np.real(line.q_to(sol.x, sol.v)[i]))
                 }
         except Exception as e:
             print(f"Error extracting line power flow: {e}")
