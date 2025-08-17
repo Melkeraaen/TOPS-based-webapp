@@ -114,6 +114,7 @@ def get_network_data(network_name):
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+
 #he,lper functions
 def convert_to_serializable(obj):
     """
