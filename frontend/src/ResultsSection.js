@@ -94,54 +94,53 @@ const getMagnitude = (value, isPhasor = false) => {
 
 // Network topology analysis
 // Identifies electrically isolated sections of the power system
+// Uses an explicit stack instead of recursion to avoid exceeding the
+// JavaScript call stack on large networks.
 const detectIslands = (networkData, lineOutage) => {
   const busNodes = networkData.nodes.filter(node => node.id?.toString().startsWith('B'));
   const visited = new Set();
   const islands = [];
 
-  // DFS to find connected components
-  const dfs = (nodeId, currentIsland) => {
-    visited.add(nodeId);
-    currentIsland.add(nodeId);
+  busNodes.forEach(startNode => {
+    if (visited.has(startNode.id)) return;
 
-    // Find all connected nodes through non-cut lines and transformers
-    networkData.links.forEach(link => {
-      // Only consider lines and transformers
-      if (link.type !== 'line' && link.type !== 'transformer') return;
-      
-      // Skip if this line is in the outage list
-      let isOutaged = false;
-      if (lineOutage?.enabled && lineOutage?.outages) {
-        isOutaged = lineOutage.outages.some(outage => outage.lineId === link.id);
-      }
-      if (isOutaged) return;
+    const currentIsland = new Set();
+    const stack = [startNode.id];
 
-      // Get source and target IDs, handling both object and string formats
-      const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
-      const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+    while (stack.length > 0) {
+      const nodeId = stack.pop();
+      if (visited.has(nodeId)) continue;
 
-      // Check if this link connects to our current node
-      const nextNode = sourceId === nodeId ? targetId : 
-                      targetId === nodeId ? sourceId : null;
-      
-      if (nextNode && !visited.has(nextNode)) {
-        dfs(nextNode, currentIsland);
-      }
-    });
-  };
+      visited.add(nodeId);
+      currentIsland.add(nodeId);
 
-  // Start DFS from each unvisited bus
-  busNodes.forEach(node => {
-    if (!visited.has(node.id)) {
-      const currentIsland = new Set();
-      dfs(node.id, currentIsland);
-      if (currentIsland.size > 0) {
-        islands.push(currentIsland);
-      }
+      // Find all connected nodes through non-cut lines and transformers
+      networkData.links.forEach(link => {
+        if (link.type !== 'line' && link.type !== 'transformer') return;
+
+        let isOutaged = false;
+        if (lineOutage?.enabled && lineOutage?.outages) {
+          isOutaged = lineOutage.outages.some(outage => outage.lineId === link.id);
+        }
+        if (isOutaged) return;
+
+        const sourceId = typeof link.source === 'object' ? link.source.id : link.source;
+        const targetId = typeof link.target === 'object' ? link.target.id : link.target;
+
+        const nextNode = sourceId === nodeId ? targetId :
+                        targetId === nodeId ? sourceId : null;
+
+        if (nextNode && !visited.has(nextNode)) {
+          stack.push(nextNode);
+        }
+      });
+    }
+
+    if (currentIsland.size > 0) {
+      islands.push(currentIsland);
     }
   });
 
-  // If no islands were found, create one island with all buses
   if (islands.length === 0 && busNodes.length > 0) {
     islands.push(new Set(busNodes.map(node => node.id)));
   }
