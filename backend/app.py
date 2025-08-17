@@ -63,6 +63,7 @@ def get_available_networks():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+
 @app.route('/api/network/<network_name>', methods=['GET'])
 def get_network_data(network_name):
     """Return basic node/link information for the specified network."""
@@ -113,6 +114,7 @@ def get_network_data(network_name):
         return jsonify({'nodes': nodes, 'links': links})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
 
 #he,lper functions
 def convert_to_serializable(obj):
