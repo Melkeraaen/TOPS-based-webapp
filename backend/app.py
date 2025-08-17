@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 from collections import defaultdict
+import pkgutil
 
 # Third-party
 import numpy as np
@@ -39,6 +40,7 @@ simulation_state = {
 
 # Default simulation parameters
 sim_parameters = {
+    'network': 'k2a',
     'step1': {'time': 1.0, 'load_index': 0, 'g_setp': 0, 'b_setp': 0},
     'step2': {'time': 2.0, 'load_index': 0, 'g_setp': 0, 'b_setp': 0},
     'lineOutage': {'enabled': True, 'outages': []},
@@ -49,6 +51,69 @@ sim_parameters = {
 
 # Queue for real-time simulation updates to frontend
 update_queue = queue.Queue()
+
+@app.route('/api/networks', methods=['GET'])
+def get_available_networks():
+    """Return list of available network models from TOPS."""
+    try:
+        import tops.ps_models
+        networks = [m.name for m in pkgutil.iter_modules(tops.ps_models.__path__)]
+        return jsonify({'networks': networks})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/network/<network_name>', methods=['GET'])
+def get_network_data(network_name):
+    """Return basic node/link information for the specified network."""
+    try:
+        model_module = importlib.import_module(f"tops.ps_models.{network_name}")
+        importlib.reload(model_module)
+        model = model_module.load()
+
+        nodes = []
+        links = []
+
+        # Buses
+        for bus in model.get('buses', [])[1:]:
+            nodes.append({'id': bus[0], 'label': bus[0]})
+
+        # Generators
+        gens = model.get('generators', {})
+        for gen_list in gens.values():
+            for gen in gen_list[1:]:
+                name, bus = gen[0], gen[1]
+                nodes.append({'id': name, 'type': 'generator', 'label': name})
+                links.append({'source': name, 'target': bus, 'type': 'generator_connection'})
+
+        # Loads
+        for load in model.get('loads', [])[1:]:
+            name, bus = load[0], load[1]
+            nodes.append({'id': name, 'type': 'load', 'label': name})
+            links.append({'source': name, 'target': bus, 'type': 'load_connection'})
+
+        # Shunts
+        for shunt in model.get('shunts', [])[1:]:
+            name, bus = shunt[0], shunt[1]
+            nodes.append({'id': name, 'type': 'shunt', 'label': name})
+            links.append({'source': name, 'target': bus, 'type': 'shunt_connection'})
+
+        # Transformers
+        for trafo in model.get('transformers', [])[1:]:
+            name, from_bus, to_bus = trafo[0], trafo[1], trafo[2]
+            nodes.append({'id': name, 'type': 'transformer', 'label': name})
+            links.append({'source': from_bus, 'target': name, 'type': 'transformer', 'id': f'{name}-1'})
+            links.append({'source': name, 'target': to_bus, 'type': 'transformer', 'id': f'{name}-2'})
+
+        # Lines
+        for line in model.get('lines', [])[1:]:
+            name, from_bus, to_bus = line[0], line[1], line[2]
+            links.append({'source': from_bus, 'target': to_bus, 'type': 'line', 'id': name})
+
+        return jsonify({'nodes': nodes, 'links': links})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 #he,lper functions
 def convert_to_serializable(obj):
     """
@@ -97,10 +162,20 @@ def run_simulation_thread(sim_params):
         # model loading and initialization
         
         print("\n=== Loading model ===")
-        import tops.ps_models.k2a as model_data #here we are importing the k2a model, changing this might break the simulation but if you wanna try something else this is the place to start.
-        importlib.reload(model_data)
-        model = model_data.load()
-        print("Model loaded successfully")
+        network_name = sim_params.get('network', 'k2a')
+        try:
+            model_module = importlib.import_module(f"tops.ps_models.{network_name}")
+        except ModuleNotFoundError:
+            update_queue.put({
+                'type': 'error',
+                'data': f'Network {network_name} not found'
+            })
+            simulation_state['running'] = False
+            return
+
+        importlib.reload(model_module)
+        model = model_module.load()
+        print(f"Model {network_name} loaded successfully")
         
         # Restructure model components for TOPS compatibility
         # Ensure loads are wrapped as DynamicLoad if provided as a flat list

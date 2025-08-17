@@ -2,15 +2,19 @@
 // Handles network data, simulation parameters, and user interactions
 
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Container, 
-  Paper, 
+import {
+  Container,
+  Paper,
   Typography,
   CircularProgress,
   Button,
   Box,
   Grid,
-  TextField
+  TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem
 } from '@mui/material';
 import * as XLSX from 'xlsx';
 import PS_graph from './PS_graph';
@@ -18,7 +22,7 @@ import ResultsSection from './ResultsSection';
 import ParameterControls from './ParameterControls';
 
 // Control panel component for simulation actions and parameter management
-const ButtonPanel = ({ 
+const ButtonPanel = ({
   saveParameters,
   handleStartSimulation,
   downloadExcel,
@@ -28,9 +32,24 @@ const ButtonPanel = ({
   selectionMode,
   setSelectionMode,
   selectedComponent,
-  monitoredComponents
+  monitoredComponents,
+  availableNetworks,
+  selectedNetwork,
+  setSelectedNetwork
 }) => (
   <Box sx={{ display: 'flex', gap: 2, mb: 4, flexWrap: 'wrap', justifyContent: 'center' }}>
+    <FormControl sx={{ minWidth: 160 }}>
+      <InputLabel>Network</InputLabel>
+      <Select
+        value={selectedNetwork}
+        label="Network"
+        onChange={(e) => setSelectedNetwork(e.target.value)}
+      >
+        {availableNetworks.map((net) => (
+          <MenuItem key={net} value={net}>{net}</MenuItem>
+        ))}
+      </Select>
+    </FormControl>
     <Button
       variant="contained"
       color="secondary"
@@ -87,7 +106,7 @@ const API_BASE_URL = 'http://127.0.0.1:8000/api';
 
 // Network topology definition
 // Defines the power system structure including buses, generators, loads, and connections
-const initialNetworkData = {
+let initialNetworkData = {
   nodes: [
     // 20kV buses with generators
     { id: 'B1', name: 'B1', voltage: 20, group: 1, label: 'B1' },
@@ -268,6 +287,8 @@ function App() {
   const [graphWidth, setGraphWidth] = useState(window.innerWidth * 0.8);
   const [simulationStartTime, setSimulationStartTime] = useState(null);
   const [simulationDuration, setSimulationDuration] = useState(null);
+  const [availableNetworks, setAvailableNetworks] = useState([]);
+  const [selectedNetwork, setSelectedNetwork] = useState('k2a');
   const [parameters, setParameters] = useState({
     step1: { time: 1.0, load_index: 0, g_setp: 0, b_setp: 0 },
     step2: { time: 2.0, load_index: 0, g_setp: 0, b_setp: 0 },
@@ -293,12 +314,55 @@ function App() {
     },
     t_end: 20
   });
+
+  useEffect(() => {
+    const fetchNetworks = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/networks`);
+        const data = await res.json();
+        if (res.ok && Array.isArray(data.networks)) {
+          setAvailableNetworks(data.networks);
+          if (!data.networks.includes(selectedNetwork)) {
+            setSelectedNetwork(data.networks[0] || '');
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch networks', err);
+      }
+    };
+    fetchNetworks();
+  }, [selectedNetwork]);
+
+  useEffect(() => {
+    if (!selectedNetwork) return;
+    const fetchNetworkData = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/network/${selectedNetwork}`);
+        const data = await res.json();
+        if (res.ok) {
+          initialNetworkData = data;
+          setNetworkData(data);
+          setParameters(prev => ({
+            ...prev,
+            step1: { ...prev.step1, load_index: 0 },
+            step2: { ...prev.step2, load_index: 0 },
+            lineOutage: { ...prev.lineOutage, outages: [] }
+          }));
+        }
+      } catch (err) {
+        console.error('Failed to fetch network data', err);
+      }
+    };
+    fetchNetworkData();
+  }, [selectedNetwork]);
   const [tEndInput, setTEndInput] = useState('');
   const [busPower, setBusPower] = useState(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedComponent, setSelectedComponent] = useState(null);
   const [monitoredComponents, setMonitoredComponents] = useState([]);
   const [islandData, setIslandData] = useState(null);
+  const loadOptions = networkData?.nodes?.filter(n => n.type === 'load') || [];
+  const lineOptions = networkData?.links?.filter(l => l.type === 'line').map(l => l.id) || [];
 
   // Helper to display empty string if tEndInput is empty, otherwise the number
   const tEndInputDisplay = tEndInput === undefined || tEndInput === null || tEndInput === '' ? '' : tEndInput;
@@ -373,6 +437,7 @@ function App() {
     const t_end_to_save = tEndInput === '' ? 20 : tEndInput;
     setParameters(prev => {
       const updated = { ...prev, t_end: t_end_to_save };
+      const updatedWithNetwork = { ...updated, network: selectedNetwork };
       setTimeout(async () => {
         try {
           setError(null);
@@ -381,7 +446,7 @@ function App() {
             headers: {
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify(updated)
+            body: JSON.stringify(updatedWithNetwork)
           });
           if (!response.ok) {
             throw new Error('Failed to save parameters');
@@ -632,7 +697,7 @@ function App() {
       const response = await fetch(`${API_BASE_URL}/start_simulation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(parameters)
+        body: JSON.stringify({ ...parameters, network: selectedNetwork })
       });
 
       const data = await response.json();
@@ -859,6 +924,7 @@ function App() {
         
         <PS_graph
           graphRef={graphRef}
+          networkName={selectedNetwork}
           networkData={networkData}
           busPower={results?.bus_power}
           powerFlows={results?.lines}
@@ -898,6 +964,9 @@ function App() {
             setSelectionMode={setSelectionMode}
             selectedComponent={selectedComponent}
             monitoredComponents={monitoredComponents}
+            availableNetworks={availableNetworks}
+            selectedNetwork={selectedNetwork}
+            setSelectedNetwork={setSelectedNetwork}
           />
           <TextField
             label=""
@@ -998,6 +1067,8 @@ function App() {
                 handleRemoveTapChange={handleRemoveTapChange}
                 handleAddTapChange={handleAddTapChange}
                 saveParameters={saveParameters}
+                loadOptions={loadOptions}
+                lineOptions={lineOptions}
               />
             </Grid>
           </Grid>
