@@ -103,12 +103,26 @@ def run_simulation_thread(sim_params):
         print("Model loaded successfully")
         
         # Restructure model components for TOPS compatibility
-        model['loads'] = {'DynamicLoad': model['loads']}
-        model['trafos'] = {'DynTrafo': [
-            model['transformers'][0] + ['ratio_from', 'ratio_to'],
-            *[row + [1, 1] for row in model['transformers'][1:]],
-        ]}
-        model.pop('transformers')
+        # Ensure loads are wrapped as DynamicLoad if provided as a flat list
+        if isinstance(model.get('loads'), list):
+            model['loads'] = {'DynamicLoad': model['loads']}
+
+        # Convert transformer data to dynamic transformer format if necessary
+        if 'transformers' in model:
+            trafos = model['transformers']
+            header = list(trafos[0])
+            rows = [list(r) for r in trafos[1:]]
+
+            if 'ratio_from' not in header:
+                header.append('ratio_from')
+                rows = [r + [1] for r in rows]
+            if 'ratio_to' not in header:
+                header.append('ratio_to')
+                rows = [r + [1] for r in rows]
+
+            model['trafos'] = {'DynTrafo': [header] + rows}
+            model.pop('transformers')
+
         print("Model structure prepared")
 
         # Create power system model, using k2a model
