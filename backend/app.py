@@ -62,6 +62,60 @@ def get_available_networks():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+
+
+@app.route('/api/network/<network_name>', methods=['GET'])
+def get_network_data(network_name):
+    """Return basic node/link information for the specified network."""
+    try:
+        model_module = importlib.import_module(f"tops.ps_models.{network_name}")
+        importlib.reload(model_module)
+        model = model_module.load()
+
+        nodes = []
+        links = []
+
+        # Buses
+        for bus in model.get('buses', [])[1:]:
+            nodes.append({'id': bus[0], 'label': bus[0]})
+
+        # Generators
+        gens = model.get('generators', {})
+        for gen_list in gens.values():
+            for gen in gen_list[1:]:
+                name, bus = gen[0], gen[1]
+                nodes.append({'id': name, 'type': 'generator', 'label': name})
+                links.append({'source': name, 'target': bus, 'type': 'generator_connection'})
+
+        # Loads
+        for load in model.get('loads', [])[1:]:
+            name, bus = load[0], load[1]
+            nodes.append({'id': name, 'type': 'load', 'label': name})
+            links.append({'source': name, 'target': bus, 'type': 'load_connection'})
+
+        # Shunts
+        for shunt in model.get('shunts', [])[1:]:
+            name, bus = shunt[0], shunt[1]
+            nodes.append({'id': name, 'type': 'shunt', 'label': name})
+            links.append({'source': name, 'target': bus, 'type': 'shunt_connection'})
+
+        # Transformers
+        for trafo in model.get('transformers', [])[1:]:
+            name, from_bus, to_bus = trafo[0], trafo[1], trafo[2]
+            nodes.append({'id': name, 'type': 'transformer', 'label': name})
+            links.append({'source': from_bus, 'target': name, 'type': 'transformer', 'id': f'{name}-1'})
+            links.append({'source': name, 'target': to_bus, 'type': 'transformer', 'id': f'{name}-2'})
+
+        # Lines
+        for line in model.get('lines', [])[1:]:
+            name, from_bus, to_bus = line[0], line[1], line[2]
+            links.append({'source': from_bus, 'target': to_bus, 'type': 'line', 'id': name})
+
+        return jsonify({'nodes': nodes, 'links': links})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 #he,lper functions
 def convert_to_serializable(obj):
     """

@@ -106,7 +106,7 @@ const API_BASE_URL = 'http://127.0.0.1:8000/api';
 
 // Network topology definition
 // Defines the power system structure including buses, generators, loads, and connections
-const initialNetworkData = {
+let initialNetworkData = {
   nodes: [
     // 20kV buses with generators
     { id: 'B1', name: 'B1', voltage: 20, group: 1, label: 'B1' },
@@ -332,12 +332,40 @@ function App() {
     };
     fetchNetworks();
   }, [selectedNetwork]);
+
+
+  useEffect(() => {
+    if (!selectedNetwork) return;
+    const fetchNetworkData = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/network/${selectedNetwork}`);
+        const data = await res.json();
+        if (res.ok) {
+          initialNetworkData = data;
+          setNetworkData(data);
+          setParameters(prev => ({
+            ...prev,
+            step1: { ...prev.step1, load_index: 0 },
+            step2: { ...prev.step2, load_index: 0 },
+            lineOutage: { ...prev.lineOutage, outages: [] }
+          }));
+        }
+      } catch (err) {
+        console.error('Failed to fetch network data', err);
+      }
+    };
+    fetchNetworkData();
+  }, [selectedNetwork]);
+
+
   const [tEndInput, setTEndInput] = useState('');
   const [busPower, setBusPower] = useState(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedComponent, setSelectedComponent] = useState(null);
   const [monitoredComponents, setMonitoredComponents] = useState([]);
   const [islandData, setIslandData] = useState(null);
+  const loadOptions = networkData?.nodes?.filter(n => n.type === 'load') || [];
+  const lineOptions = networkData?.links?.filter(l => l.type === 'line').map(l => l.id) || [];
 
   // Helper to display empty string if tEndInput is empty, otherwise the number
   const tEndInputDisplay = tEndInput === undefined || tEndInput === null || tEndInput === '' ? '' : tEndInput;
@@ -899,6 +927,7 @@ function App() {
         
         <PS_graph
           graphRef={graphRef}
+          networkName={selectedNetwork}
           networkData={networkData}
           busPower={results?.bus_power}
           powerFlows={results?.lines}
@@ -1041,6 +1070,8 @@ function App() {
                 handleRemoveTapChange={handleRemoveTapChange}
                 handleAddTapChange={handleAddTapChange}
                 saveParameters={saveParameters}
+                loadOptions={loadOptions}
+                lineOptions={lineOptions}
               />
             </Grid>
           </Grid>

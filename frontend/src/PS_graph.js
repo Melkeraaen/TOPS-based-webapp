@@ -78,11 +78,12 @@ const isSelectable = (node) => {
 
 // Main graph component with interactive features
 // Handles visualization, selection, and monitoring of power system components
-const PS_graph = ({ 
+const PS_graph = ({
   graphRef,
-  networkData, 
-  busPower, 
-  powerFlows, 
+  networkName,
+  networkData,
+  busPower,
+  powerFlows,
   initialNetworkData,
   graphWidth,
   getLineFlowDirectionSimple,
@@ -183,7 +184,7 @@ const PS_graph = ({
   return (
     <Paper elevation={2} sx={{ p: 2, bgcolor: 'background.default', height: '600px', width: '100%', mb: 4, position: 'relative' }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-        <Typography variant="h5" sx={{ color: 'primary.main' }}>K2A Power System</Typography>
+        <Typography variant="h5" sx={{ color: 'primary.main' }}>{networkName?.toUpperCase()} Power System</Typography>
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
           <Typography>🟡 Bus</Typography>
           <Typography>⚫ Line</Typography>
