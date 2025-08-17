@@ -44,10 +44,10 @@ const TimeSlider = ({ value, onChange, label, max }) => (
 
 // Main parameter control component
 // Manages all simulation parameters including load steps, line outages, and tap changers
-const ParameterControls = ({ 
-  parameters, 
-  setParameters, 
-  handleParameterChange, 
+const ParameterControls = ({
+  parameters,
+  setParameters,
+  handleParameterChange,
   handleTapChangerChange,
   handleLineOutageChange,
   handleReconnectChange,
@@ -55,7 +55,9 @@ const ParameterControls = ({
   handleAddLineOutage,
   handleRemoveTapChange,
   handleAddTapChange,
-  saveParameters
+  saveParameters,
+  loadOptions = [],
+  lineOptions = []
 }) => {
   // Load step parameter interface
   // Controls for load changes at specific time points
@@ -70,8 +72,11 @@ const ParameterControls = ({
           value={parameters[`step${step}`].load_index}
           onChange={(e) => handleParameterChange(`step${step}`, 'load_index', parseInt(e.target.value))}
         >
-          <MenuItem value={0}>L1 (Bus B7)</MenuItem>
-          <MenuItem value={1}>L2 (Bus B9)</MenuItem>
+          {loadOptions.map((load, idx) => (
+            <MenuItem key={load.id || idx} value={idx}>
+              {load.label || load.id}
+            </MenuItem>
+          ))}
         </Select>
       </FormControl>
 
@@ -151,14 +156,9 @@ const ParameterControls = ({
                   fullWidth
                 >
                   <MenuItem value="">Select a line</MenuItem>
-                  <MenuItem value="L5-6">Line B5-B6</MenuItem>
-                  <MenuItem value="L6-7">Line B6-B7</MenuItem>
-                  <MenuItem value="L7-8-1">Line B7-B8 (1)</MenuItem>
-                  <MenuItem value="L7-8-2">Line B7-B8 (2)</MenuItem>
-                  <MenuItem value="L8-9-1">Line B8-B9 (1)</MenuItem>
-                  <MenuItem value="L8-9-2">Line B8-B9 (2)</MenuItem>
-                  <MenuItem value="L9-10">Line B9-B10</MenuItem>
-                  <MenuItem value="L10-11">Line B10-B11</MenuItem>
+                  {lineOptions.map(id => (
+                    <MenuItem key={id} value={id}>{id}</MenuItem>
+                  ))}
                 </TextField>
               </Box>
 
