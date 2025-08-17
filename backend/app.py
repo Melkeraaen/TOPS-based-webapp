@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 from collections import defaultdict
+import pkgutil
 
 # Third-party
 import numpy as np
@@ -39,6 +40,7 @@ simulation_state = {
 
 # Default simulation parameters
 sim_parameters = {
+    'network': 'k2a',
     'step1': {'time': 1.0, 'load_index': 0, 'g_setp': 0, 'b_setp': 0},
     'step2': {'time': 2.0, 'load_index': 0, 'g_setp': 0, 'b_setp': 0},
     'lineOutage': {'enabled': True, 'outages': []},
@@ -49,6 +51,17 @@ sim_parameters = {
 
 # Queue for real-time simulation updates to frontend
 update_queue = queue.Queue()
+
+@app.route('/api/networks', methods=['GET'])
+def get_available_networks():
+    """Return list of available network models from TOPS."""
+    try:
+        import tops.ps_models
+        networks = [m.name for m in pkgutil.iter_modules(tops.ps_models.__path__)]
+        return jsonify({'networks': networks})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 #he,lper functions
 def convert_to_serializable(obj):
     """
@@ -97,10 +110,20 @@ def run_simulation_thread(sim_params):
         # model loading and initialization
         
         print("\n=== Loading model ===")
-        import tops.ps_models.k2a as model_data #here we are importing the k2a model, changing this might break the simulation but if you wanna try something else this is the place to start.
-        importlib.reload(model_data)
-        model = model_data.load()
-        print("Model loaded successfully")
+        network_name = sim_params.get('network', 'k2a')
+        try:
+            model_module = importlib.import_module(f"tops.ps_models.{network_name}")
+        except ModuleNotFoundError:
+            update_queue.put({
+                'type': 'error',
+                'data': f'Network {network_name} not found'
+            })
+            simulation_state['running'] = False
+            return
+
+        importlib.reload(model_module)
+        model = model_module.load()
+        print(f"Model {network_name} loaded successfully")
         
         # Restructure model components for TOPS compatibility
         # Ensure loads are wrapped as DynamicLoad if provided as a flat list
