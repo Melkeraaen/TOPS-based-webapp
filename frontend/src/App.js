@@ -334,6 +334,7 @@ function App() {
   }, [selectedNetwork]);
 
 
+  
   useEffect(() => {
     if (!selectedNetwork) return;
     const fetchNetworkData = async () => {
@@ -356,7 +357,6 @@ function App() {
     };
     fetchNetworkData();
   }, [selectedNetwork]);
-
 
   const [tEndInput, setTEndInput] = useState('');
   const [busPower, setBusPower] = useState(null);

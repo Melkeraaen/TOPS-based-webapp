@@ -1,7 +1,7 @@
 // Results visualization component for power system simulation
 // Displays plots, tables, and analysis of simulation results
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Grid, 
   Paper, 
@@ -476,6 +476,12 @@ const ResultsSection = ({
 }) => {
   const [islandFrequencyTimeSeries, setIslandFrequencyTimeSeries] = useState(null);
   const [islandInfo, setIslandInfo] = useState([]); // To store island details for legend/labels
+  const exportIslandDataRef = useRef(exportIslandData);
+
+  // Keep a ref to the latest export function without triggering effects
+  useEffect(() => {
+    exportIslandDataRef.current = exportIslandData;
+  }, [exportIslandData]);
 
   // Effect to calculate island frequency time series
   useEffect(() => {
@@ -484,10 +490,10 @@ const ResultsSection = ({
       const genMapping = mapGeneratorsToIslands(islands, initialNetworkData);
       
       // Make island data available for App.js when needed
-      if (exportIslandData && typeof exportIslandData === 'function') {
+      if (exportIslandDataRef.current && typeof exportIslandDataRef.current === 'function') {
         const latestSpeeds = results.gen_speed[results.gen_speed.length - 1];
         const frequencies = calculateIslandFrequencies(islands, genMapping, latestSpeeds);
-        exportIslandData({
+        exportIslandDataRef.current({
           islands,
           genMapping,
           frequencies
@@ -524,7 +530,7 @@ const ResultsSection = ({
       setIslandFrequencyTimeSeries(null);
       setIslandInfo([]);
     }
-  }, [results?.gen_speed, initialNetworkData, parameters.lineOutage, exportIslandData]);
+  }, [results?.gen_speed, initialNetworkData, parameters.lineOutage]);
 
   if (!results) return null;
 
